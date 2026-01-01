@@ -18,6 +18,7 @@ const elements = {
     initialAmount: document.getElementById('initialAmount'),
     stopLossPercent: document.getElementById('stopLossPercent'),
     takeProfitPercent: document.getElementById('takeProfitPercent'),
+    belowMa20Days: document.getElementById('belowMa20Days'),
     loading: document.getElementById('loading'),
     statisticsSection: document.getElementById('statisticsSection'),
     backtestSection: document.getElementById('backtestSection'),
@@ -87,12 +88,12 @@ function hideAllSections() {
     elements.dataSection.style.display = 'none';
 }
 
-// 格式化数字
+// 格式化数字（保留3位小数，与Excel表格一致）
 function formatNumber(num) {
     if (num === null || num === undefined) return '-';
     return new Intl.NumberFormat('zh-CN', {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2
+        minimumFractionDigits: 3,
+        maximumFractionDigits: 3
     }).format(num);
 }
 
@@ -275,6 +276,7 @@ function displayRecentData(data) {
 
     data.forEach(item => {
         const row = document.createElement('tr');
+        const ma20 = item.ma20 !== undefined && item.ma20 !== null ? formatNumber(item.ma20) : '-';
         row.innerHTML = `
             <td>${item.date}</td>
             <td>${formatNumber(item.close)}</td>
@@ -282,6 +284,7 @@ function displayRecentData(data) {
             <td>${formatNumber(item.阻力)}</td>
             <td>${formatNumber(item.中线)}</td>
             <td>${formatNumber(item.趋势线)}</td>
+            <td>${ma20}</td>
             <td>${item.买 === 1 ? '✅' : ''}</td>
             <td>${item.卖 === 1 ? '✅' : ''}</td>
         `;
@@ -393,6 +396,8 @@ async function handleBacktest() {
     const takeProfitPercent = takeProfitPercentValue ? parseFloat(takeProfitPercentValue) : null;
     const buyThresholdValue = elements.buyThreshold.value.trim();
     const buyThreshold = buyThresholdValue ? parseFloat(buyThresholdValue) : null;
+    const belowMa20DaysValue = elements.belowMa20Days.value.trim();
+    const belowMa20Days = belowMa20DaysValue ? parseInt(belowMa20DaysValue) : 3;
 
     // 验证股票代码
     if (!stockCode) {
@@ -415,6 +420,11 @@ async function handleBacktest() {
             alert('止盈比例必须在0-200之间');
             return;
         }
+    }
+
+    if (isNaN(belowMa20Days) || belowMa20Days < 1 || belowMa20Days > 30) {
+        alert('20均线下方天数必须在1-30之间');
+        return;
     }
 
     // 验证日期范围
@@ -446,6 +456,9 @@ async function handleBacktest() {
             }
             requestBody.buy_threshold = buyThreshold;
         }
+        
+        // 添加20均线下方天数参数
+        requestBody.below_ma20_days = belowMa20Days;
         
         if (startDate) {
             requestBody.start_date = startDate;

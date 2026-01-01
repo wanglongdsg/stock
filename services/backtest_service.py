@@ -16,13 +16,32 @@ from services.indicator_service import IndicatorService
 logger = logging.getLogger(__name__)
 
 
+def format_decimal(value, decimals=3):
+    """
+    格式化数值为指定小数位数
+    
+    Args:
+        value: 要格式化的值（可以是None、NaN或数值）
+        decimals: 小数位数，默认3位
+        
+    Returns:
+        格式化后的浮点数，如果输入为None或NaN则返回None
+    """
+    if value is None or pd.isna(value):
+        return None
+    try:
+        return round(float(value), decimals)
+    except (ValueError, TypeError):
+        return None
+
+
 class BacktestService:
     """回测服务类"""
     
     @classmethod
     def calculate_backtest(cls, period: str, initial_amount: float, file_path: str = 'data/159915.xlsx',
                           start_date: str = None, end_date: str = None, stop_loss_percent: float = 5.0,
-                          take_profit_percent: float = None, buy_threshold: float = 10.0):
+                          take_profit_percent: float = None, buy_threshold: float = 10.0, below_ma20_days: int = 3):
         """
         计算回测结果
         
@@ -220,9 +239,9 @@ class BacktestService:
                     
                     buy_trades.append({
                         'date': pd.Timestamp(next_date).strftime('%Y-%m-%d'),
-                        'price': float(buy_price),
-                        'shares': float(shares),
-                        'amount': float(buy_amount)
+                        'price': format_decimal(buy_price),
+                        'shares': format_decimal(shares),
+                        'amount': format_decimal(buy_amount)
                     })
                 
                 # 卖出逻辑（仅在持仓时执行）
@@ -297,11 +316,11 @@ class BacktestService:
                                         # 收盘价在20均线下方，累加计数
                                         close_below_ma20_days += 1
                                         
-                                        # 如果连续3天在20均线下方，第4天卖出
-                                        # 注意：当close_below_ma20_days == 3时，表示已经连续3天在下方，第4天（当前这天）卖出
-                                        if close_below_ma20_days == 3:
+                                        # 如果连续below_ma20_days天在20均线下方，第(below_ma20_days+1)天卖出
+                                        # 注意：当close_below_ma20_days == below_ma20_days时，表示已经连续below_ma20_days天在下方，第(below_ma20_days+1)天（当前这天）卖出
+                                        if close_below_ma20_days == below_ma20_days:
                                             should_sell = True
-                                            sell_reason = '收盘价在20均线下方3天，第4天卖出'
+                                            sell_reason = f'收盘价在20均线下方{below_ma20_days}天，第{below_ma20_days+1}天卖出'
                                             last_ma20_check_idx = check_idx  # 更新检查索引
                                             break  # 找到卖出条件后，停止检查
                                     else:
@@ -328,11 +347,11 @@ class BacktestService:
                         
                         sell_trades.append({
                             'date': pd.Timestamp(next_date).strftime('%Y-%m-%d'),
-                            'price': float(sell_price),
-                            'shares': float(shares),
-                            'amount': float(cash),
-                            'profit': float(profit),
-                            'profit_rate': float(profit_rate),
+                            'price': format_decimal(sell_price),
+                            'shares': format_decimal(shares),
+                            'amount': format_decimal(cash),
+                            'profit': format_decimal(profit),
+                            'profit_rate': format_decimal(profit_rate),
                             'reason': sell_reason
                         })
                         shares = 0
@@ -354,11 +373,11 @@ class BacktestService:
                 profit_rate = (profit / buy_amount) * 100 if buy_amount > 0 else 0
                 sell_trades.append({
                     'date': result_df.iloc[-1]['date'].strftime('%Y-%m-%d'),
-                    'price': float(last_price),
-                    'shares': float(shares),
-                    'amount': float(cash),
-                    'profit': float(profit),
-                    'profit_rate': float(profit_rate)
+                    'price': format_decimal(last_price),
+                    'shares': format_decimal(shares),
+                    'amount': format_decimal(cash),
+                    'profit': format_decimal(profit),
+                    'profit_rate': format_decimal(profit_rate)
                 })
             
             # 计算总收益
@@ -380,12 +399,12 @@ class BacktestService:
                 sell_trade = sell_trades[i]
                 trade_pairs.append({
                     'buy_date': buy_trade['date'],
-                    'buy_price': buy_trade['price'],
+                    'buy_price': format_decimal(buy_trade['price']),
                     'sell_date': sell_trade['date'],
-                    'sell_price': sell_trade['price'],
-                    'shares': buy_trade['shares'],
-                    'profit': sell_trade['profit'],
-                    'profit_rate': sell_trade['profit_rate'],
+                    'sell_price': format_decimal(sell_trade['price']),
+                    'shares': format_decimal(buy_trade['shares']),
+                    'profit': format_decimal(sell_trade['profit']),
+                    'profit_rate': format_decimal(sell_trade['profit_rate']),
                     'reason': sell_trade.get('reason', '-')  # 获取卖出原因，如果没有则使用 '-'
                 })
             
@@ -396,11 +415,11 @@ class BacktestService:
                 'success': True,
                 'period': period.upper(),
                 'period_name': period_name,
-                'initial_amount': initial_amount,
-                'final_amount': float(final_amount),
-                'total_profit': float(total_profit),
-                'total_profit_rate': float(total_profit_rate),
-                'annual_profit_rate': float(annual_profit_rate),
+                'initial_amount': format_decimal(initial_amount),
+                'final_amount': format_decimal(final_amount),
+                'total_profit': format_decimal(total_profit),
+                'total_profit_rate': format_decimal(total_profit_rate),
+                'annual_profit_rate': format_decimal(annual_profit_rate),
                 'start_date': start_date.strftime('%Y-%m-%d'),
                 'end_date': end_date.strftime('%Y-%m-%d'),
                 'trading_days': int(days),

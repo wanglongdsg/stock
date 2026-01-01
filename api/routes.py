@@ -244,6 +244,26 @@ def backtest():
         else:
             buy_threshold = 10.0  # 默认值
         
+        # 获取收盘价在20均线下方天数（可选，默认3天）
+        below_ma20_days = data.get('below_ma20_days')
+        if below_ma20_days is not None and below_ma20_days != '':
+            try:
+                below_ma20_days = int(below_ma20_days)
+                if below_ma20_days < 1 or below_ma20_days > 30:
+                    return jsonify({
+                        'success': False,
+                        'error': 'below_ma20_days 必须在1-30之间',
+                        'error_code': 'INVALID_BELOW_MA20_DAYS'
+                    }), 400
+            except (ValueError, TypeError):
+                return jsonify({
+                    'success': False,
+                    'error': 'below_ma20_days 必须是有效的整数',
+                    'error_code': 'INVALID_BELOW_MA20_DAYS'
+                }), 400
+        else:
+            below_ma20_days = 3  # 默认值
+        
         # 获取股票代码
         stock_code = data.get('stock_code', '159915').strip()
         if not stock_code:
@@ -259,7 +279,7 @@ def backtest():
         end_date = data.get('end_date')
         
         # 计算回测结果
-        result = BacktestService.calculate_backtest(period, initial_amount, file_path, start_date, end_date, stop_loss_percent, take_profit_percent, buy_threshold)
+        result = BacktestService.calculate_backtest(period, initial_amount, file_path, start_date, end_date, stop_loss_percent, take_profit_percent, buy_threshold, below_ma20_days)
         
         # 如果计算失败，返回错误
         if not result.get('success', False):

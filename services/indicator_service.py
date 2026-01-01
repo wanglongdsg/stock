@@ -14,6 +14,25 @@ from utils.period_converter import convert_to_period
 logger = logging.getLogger(__name__)
 
 
+def format_decimal(value, decimals=3):
+    """
+    格式化数值为指定小数位数
+    
+    Args:
+        value: 要格式化的值（可以是None、NaN或数值）
+        decimals: 小数位数，默认3位
+        
+    Returns:
+        格式化后的浮点数，如果输入为None或NaN则返回None
+    """
+    if value is None or pd.isna(value):
+        return None
+    try:
+        return round(float(value), decimals)
+    except (ValueError, TypeError):
+        return None
+
+
 class IndicatorService:
     """指标计算服务类"""
     
@@ -88,8 +107,9 @@ class IndicatorService:
             # 对于NaN值，保持NaN，在后续使用时会跳过这些行
             
             # 创建日期到20日均线的映射（用于快速查找）
+            # 使用完整的日线数据，而不是过滤后的数据，以便查找所有日期的20日均线
             daily_ma20_map = {}
-            for idx, row in daily_df_filtered.iterrows():
+            for idx, row in daily_df.iterrows():
                 if pd.notna(row['ma20']):
                     daily_ma20_map[row['date']] = row['ma20']
             
@@ -147,19 +167,24 @@ class IndicatorService:
                     buy_display['date'] = buy_display['date'].dt.strftime('%Y-%m-%d')
                 for _, row in buy_display.iterrows():
                     signal_date = pd.to_datetime(row['date'])
-                    # 获取该日期对应的日线20日均线
+                    # 获取该日期对应的日线20日均线（直接使用表格中的MA.MA3值）
                     ma20_value = None
-                    # 查找最接近的日线数据
-                    for check_date in pd.date_range(end=signal_date, periods=10, freq='D'):
-                        if check_date in daily_ma20_map:
-                            ma20_value = daily_ma20_map[check_date]
-                            break
+                    # 首先尝试直接查找该日期
+                    if signal_date in daily_ma20_map:
+                        ma20_value = daily_ma20_map[signal_date]
+                    else:
+                        # 如果找不到，查找最接近的日期（向前查找，最多10天）
+                        for days_back in range(1, 11):
+                            check_date = signal_date - pd.Timedelta(days=days_back)
+                            if check_date in daily_ma20_map:
+                                ma20_value = daily_ma20_map[check_date]
+                                break
                     
                     signal_item = {
                         'date': str(row['date']),
-                        'close': float(row['close']),
-                        'trend_line': float(row['趋势线']),
-                        'ma20': float(ma20_value) if ma20_value is not None and pd.notna(ma20_value) else None
+                        'close': format_decimal(row['close']),
+                        'trend_line': format_decimal(row['趋势线']),
+                        'ma20': format_decimal(ma20_value)
                     }
                     # 添加买入原因（如果有）
                     if '买入原因' in row:
@@ -183,19 +208,24 @@ class IndicatorService:
                     sell_display['date'] = sell_display['date'].dt.strftime('%Y-%m-%d')
                 for _, row in sell_display.iterrows():
                     signal_date = pd.to_datetime(row['date'])
-                    # 获取该日期对应的日线20日均线
+                    # 获取该日期对应的日线20日均线（直接使用表格中的MA.MA3值）
                     ma20_value = None
-                    # 查找最接近的日线数据
-                    for check_date in pd.date_range(end=signal_date, periods=10, freq='D'):
-                        if check_date in daily_ma20_map:
-                            ma20_value = daily_ma20_map[check_date]
-                            break
+                    # 首先尝试直接查找该日期
+                    if signal_date in daily_ma20_map:
+                        ma20_value = daily_ma20_map[signal_date]
+                    else:
+                        # 如果找不到，查找最接近的日期（向前查找，最多10天）
+                        for days_back in range(1, 11):
+                            check_date = signal_date - pd.Timedelta(days=days_back)
+                            if check_date in daily_ma20_map:
+                                ma20_value = daily_ma20_map[check_date]
+                                break
                     
                     signal_item = {
                         'date': str(row['date']),
-                        'close': float(row['close']),
-                        'trend_line': float(row['趋势线']),
-                        'ma20': float(ma20_value) if ma20_value is not None and pd.notna(ma20_value) else None
+                        'close': format_decimal(row['close']),
+                        'trend_line': format_decimal(row['趋势线']),
+                        'ma20': format_decimal(ma20_value)
                     }
                     # 添加卖出原因（如果有）
                     if '卖出原因' in row:
@@ -221,11 +251,27 @@ class IndicatorService:
                     value = row[col]
                     if pd.notna(value):
                         if isinstance(value, (int, float)):
-                            data_item[col] = float(value)
+                            data_item[col] = format_decimal(value)
                         else:
                             data_item[col] = str(value)
                     else:
                         data_item[col] = None
+                
+                # 添加20日均线（使用表格中的MA.MA3值）
+                signal_date = pd.to_datetime(row['date'])
+                ma20_value = None
+                # 首先尝试直接查找该日期
+                if signal_date in daily_ma20_map:
+                    ma20_value = daily_ma20_map[signal_date]
+                else:
+                    # 如果找不到，查找最接近的日期（向前查找，最多10天）
+                    for days_back in range(1, 11):
+                        check_date = signal_date - pd.Timedelta(days=days_back)
+                        if check_date in daily_ma20_map:
+                            ma20_value = daily_ma20_map[check_date]
+                            break
+                
+                data_item['ma20'] = format_decimal(ma20_value)
                 recent_data_list.append(data_item)
             
             return {
