@@ -140,6 +140,9 @@ class BacktestService:
                     'profit_rate': sell_trade['profit_rate']
                 })
             
+            # 按卖出日期倒序排序（最新的交易在前）
+            trade_pairs.sort(key=lambda x: x['sell_date'], reverse=True)
+            
             return {
                 'success': True,
                 'period': period.upper(),
@@ -168,6 +171,7 @@ class BacktestService:
                 'error': str(e),
                 'error_code': 'BACKTEST_ERROR'
             }
+
 
 
 

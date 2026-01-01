@@ -74,7 +74,10 @@ class IndicatorService:
             if len(buy_positions) > 0:
                 buy_display = buy_positions[['date', 'close', '趋势线']].copy()
                 if 'date' in buy_display.columns:
-                    buy_display['date'] = pd.to_datetime(buy_display['date']).dt.strftime('%Y-%m-%d')
+                    buy_display['date'] = pd.to_datetime(buy_display['date'])
+                    # 按日期倒序排序
+                    buy_display = buy_display.sort_values('date', ascending=False)
+                    buy_display['date'] = buy_display['date'].dt.strftime('%Y-%m-%d')
                 for _, row in buy_display.iterrows():
                     buy_signals_list.append({
                         'date': str(row['date']),
@@ -88,7 +91,10 @@ class IndicatorService:
             if len(sell_positions) > 0:
                 sell_display = sell_positions[['date', 'close', '趋势线']].copy()
                 if 'date' in sell_display.columns:
-                    sell_display['date'] = pd.to_datetime(sell_display['date']).dt.strftime('%Y-%m-%d')
+                    sell_display['date'] = pd.to_datetime(sell_display['date'])
+                    # 按日期倒序排序
+                    sell_display = sell_display.sort_values('date', ascending=False)
+                    sell_display['date'] = sell_display['date'].dt.strftime('%Y-%m-%d')
                 for _, row in sell_display.iterrows():
                     sell_signals_list.append({
                         'date': str(row['date']),
@@ -96,12 +102,15 @@ class IndicatorService:
                         'trend_line': float(row['趋势线'])
                     })
             
-            # 获取最近20条关键指标数据
+            # 获取最近20条关键指标数据（按日期倒序）
             key_cols = ['date', 'close', '支撑', '阻力', '中线', '趋势线', '买', '卖']
             available_cols = [col for col in key_cols if col in result_df.columns]
             recent_data = result_df[available_cols].tail(20).copy()
             if 'date' in recent_data.columns:
-                recent_data['date'] = pd.to_datetime(recent_data['date']).dt.strftime('%Y-%m-%d')
+                recent_data['date'] = pd.to_datetime(recent_data['date'])
+                # 按日期倒序排序
+                recent_data = recent_data.sort_values('date', ascending=False)
+                recent_data['date'] = recent_data['date'].dt.strftime('%Y-%m-%d')
             
             recent_data_list = []
             for _, row in recent_data.iterrows():
@@ -145,6 +154,7 @@ class IndicatorService:
                 'error': str(e),
                 'error_code': 'CALCULATION_ERROR'
             }
+
 
 
 
