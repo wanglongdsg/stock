@@ -15,6 +15,7 @@ const elements = {
     btnBacktest: document.getElementById('btnBacktest'),
     backtestPanel: document.getElementById('backtestPanel'),
     initialAmount: document.getElementById('initialAmount'),
+    stopLossPercent: document.getElementById('stopLossPercent'),
     loading: document.getElementById('loading'),
     statisticsSection: document.getElementById('statisticsSection'),
     backtestSection: document.getElementById('backtestSection'),
@@ -361,6 +362,7 @@ async function handleBacktest() {
     const startDate = elements.startDate.value || null;
     const endDate = elements.endDate.value || null;
     const initialAmount = parseFloat(elements.initialAmount.value);
+    const stopLossPercent = parseFloat(elements.stopLossPercent.value);
 
     // 验证股票代码
     if (!stockCode) {
@@ -370,6 +372,11 @@ async function handleBacktest() {
 
     if (!initialAmount || initialAmount <= 0) {
         alert('请输入有效的初始资金金额');
+        return;
+    }
+
+    if (!stopLossPercent || stopLossPercent < 0 || stopLossPercent > 50) {
+        alert('止损比例必须在0-50之间');
         return;
     }
 
@@ -385,7 +392,8 @@ async function handleBacktest() {
         const requestBody = {
             period,
             stock_code: stockCode,
-            initial_amount: initialAmount
+            initial_amount: initialAmount,
+            stop_loss_percent: stopLossPercent
         };
         
         if (startDate) {
@@ -468,7 +476,7 @@ function displayTrades(trades) {
     elements.tradesBody.innerHTML = '';
 
     if (trades.length === 0) {
-        elements.tradesBody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: var(--text-secondary);">暂无交易记录</td></tr>';
+        elements.tradesBody.innerHTML = '<tr><td colspan="8" style="text-align: center; color: var(--text-secondary);">暂无交易记录</td></tr>';
         return;
     }
 
@@ -476,6 +484,7 @@ function displayTrades(trades) {
         const row = document.createElement('tr');
         const profitColor = getPriceColor(trade.profit);
         const profitStyle = `color: ${profitColor}`;
+        const sellReason = trade.reason || '-';
         row.innerHTML = `
             <td>${trade.buy_date}</td>
             <td>${formatNumber(trade.buy_price)}</td>
@@ -484,6 +493,7 @@ function displayTrades(trades) {
             <td>${formatNumber(trade.shares)}</td>
             <td style="${profitStyle}">${formatNumber(trade.profit)}</td>
             <td style="${profitStyle}">${formatPercent(trade.profit_rate)}</td>
+            <td>${sellReason}</td>
         `;
         elements.tradesBody.appendChild(row);
     });

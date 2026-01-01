@@ -167,6 +167,23 @@ def backtest():
                 'error_code': 'INVALID_AMOUNT'
             }), 400
         
+        # 获取止损比例
+        stop_loss_percent = data.get('stop_loss_percent', 5.0)
+        try:
+            stop_loss_percent = float(stop_loss_percent)
+            if stop_loss_percent < 0 or stop_loss_percent > 50:
+                return jsonify({
+                'success': False,
+                'error': 'stop_loss_percent 必须在0-50之间',
+                'error_code': 'INVALID_STOP_LOSS'
+            }), 400
+        except (ValueError, TypeError):
+            return jsonify({
+                'success': False,
+                'error': 'stop_loss_percent 必须是有效的数字',
+                'error_code': 'INVALID_STOP_LOSS'
+            }), 400
+        
         # 获取股票代码
         stock_code = data.get('stock_code', '300760').strip()
         if not stock_code:
@@ -182,7 +199,7 @@ def backtest():
         end_date = data.get('end_date')
         
         # 计算回测结果
-        result = BacktestService.calculate_backtest(period, initial_amount, file_path, start_date, end_date)
+        result = BacktestService.calculate_backtest(period, initial_amount, file_path, start_date, end_date, stop_loss_percent)
         
         # 如果计算失败，返回错误
         if not result.get('success', False):
