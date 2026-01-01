@@ -39,7 +39,7 @@
                 <h2 class="panel-title">参数设置</h2>
                 <div class="form-group">
                     <label for="stockCode">股票代码</label>
-                    <input type="text" id="stockCode" class="form-control" placeholder="例如: 300760" value="300760">
+                    <input type="text" id="stockCode" class="form-control" placeholder="例如: 159915" value="159915">
                     <small class="form-hint">数据文件位于data目录，文件名格式：股票代码.xlsx</small>
                 </div>
                 <div class="form-group">
@@ -49,6 +49,11 @@
                         <option value="W">周线</option>
                         <option value="M">月线</option>
                     </select>
+                </div>
+                <div class="form-group">
+                    <label for="buyThreshold">买入信号阈值</label>
+                    <input type="number" id="buyThreshold" class="form-control" value="" placeholder="默认10" min="0" max="100" step="0.1">
+                    <small class="form-hint">趋势线从下向上穿越此值进行买入，留空则默认为10</small>
                 </div>
                 <div class="form-row">
                     <div class="form-group">
@@ -84,6 +89,11 @@
                     <label for="stopLossPercent">止损比例（%）</label>
                     <input type="number" id="stopLossPercent" class="form-control" value="5" min="0.1" max="50" step="0.1">
                     <small class="form-hint">默认5%，当亏损达到此比例时自动止损</small>
+                </div>
+                <div class="form-group">
+                    <label for="takeProfitPercent">止盈比例（%）</label>
+                    <input type="number" id="takeProfitPercent" class="form-control" value="" min="0.1" max="200" step="0.1" placeholder="留空则不设止盈">
+                    <small class="form-hint">可选，当盈利达到此比例时自动止盈。留空则按原逻辑（不设止盈）</small>
                 </div>
             </div>
         </section>
@@ -186,36 +196,42 @@
         <!-- 数据表格 -->
         <section id="dataSection" class="data-section" style="display: none;">
             <div class="tabs">
-                <button class="tab-btn active" data-tab="signals">买卖信号</button>
+                <button class="tab-btn active" data-tab="buySignals">买入信号</button>
+                <button class="tab-btn" data-tab="sellSignals">卖出信号</button>
                 <button class="tab-btn" data-tab="recent">最近数据</button>
                 <button class="tab-btn" data-tab="trades" style="display: none;">交易记录</button>
             </div>
 
-            <!-- 买卖信号表格 -->
-            <div id="signalsTab" class="tab-content active">
+            <!-- 买入信号表格 -->
+            <div id="buySignalsTab" class="tab-content active">
                 <div class="table-container">
-                    <h3 class="table-title">买入信号</h3>
                     <table class="data-table" id="buySignalsTable">
                         <thead>
                             <tr>
                                 <th>日期</th>
                                 <th>收盘价</th>
                                 <th>趋势线</th>
+                                <th>20均线</th>
+                                <th>买入原因</th>
                             </tr>
                         </thead>
                         <tbody id="buySignalsBody">
                         </tbody>
                     </table>
                 </div>
+            </div>
 
+            <!-- 卖出信号表格 -->
+            <div id="sellSignalsTab" class="tab-content">
                 <div class="table-container">
-                    <h3 class="table-title">卖出信号</h3>
                     <table class="data-table" id="sellSignalsTable">
                         <thead>
                             <tr>
                                 <th>日期</th>
                                 <th>收盘价</th>
                                 <th>趋势线</th>
+                                <th>20均线</th>
+                                <th>卖出原因</th>
                             </tr>
                         </thead>
                         <tbody id="sellSignalsBody">

@@ -91,6 +91,22 @@ def load_stock_data(file_path: str) -> pd.DataFrame:
             column_mapping[col] = 'volume'
             break
     
+    # 趋势线列（如果Excel中已有）
+    trend_line_keywords = ['趋势线', 'trend', 'Trend', '超买超卖', '超买超卖.趋势线']
+    for col in df.columns:
+        col_str = str(col).strip()
+        if any(keyword in col_str for keyword in trend_line_keywords):
+            column_mapping[col] = '趋势线_原始'  # 保留原始趋势线列
+            break
+    
+    # MA.MA3列（20日均线）- 从表格中读取
+    ma3_keywords = ['MA.MA3', 'MA3', 'ma3', '20日均线', 'MA20']
+    for col in df.columns:
+        col_str = str(col).strip()
+        if any(keyword in col_str for keyword in ma3_keywords):
+            column_mapping[col] = 'ma20'  # 使用表格中的MA.MA3作为20日均线
+            break
+    
     # 重命名列
     df = df.rename(columns=column_mapping)
     
@@ -120,6 +136,12 @@ def load_stock_data(file_path: str) -> pd.DataFrame:
         if col in df.columns:
             # 尝试转换为数值类型
             df[col] = pd.to_numeric(df[col], errors='coerce')
+    
+    # 单独处理ma20列（可能包含空字符串）
+    if 'ma20' in df.columns:
+        # 先替换空字符串为NaN，然后转换为数值类型
+        df['ma20'] = df['ma20'].replace(['', ' ', '  '], pd.NA)
+        df['ma20'] = pd.to_numeric(df['ma20'], errors='coerce')
     
     # 删除包含NaN的行（数据不完整）
     df = df.dropna(subset=['open', 'high', 'low', 'close'])

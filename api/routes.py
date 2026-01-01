@@ -76,9 +76,9 @@ def calculate():
             }), 400
         
         # 获取股票代码
-        stock_code = data.get('stock_code', '300760').strip()
+        stock_code = data.get('stock_code', '159915').strip()
         if not stock_code:
-            stock_code = '300760'
+            stock_code = '159915'
         
         # 构建文件路径
         file_path = data.get('file_path')
@@ -89,8 +89,28 @@ def calculate():
         start_date = data.get('start_date')
         end_date = data.get('end_date')
         
+        # 获取买入信号阈值（可选，默认10）
+        buy_threshold = data.get('buy_threshold')
+        if buy_threshold is not None and buy_threshold != '':
+            try:
+                buy_threshold = float(buy_threshold)
+                if buy_threshold < 0 or buy_threshold > 100:
+                    return jsonify({
+                        'success': False,
+                        'error': 'buy_threshold 必须在0-100之间',
+                        'error_code': 'INVALID_BUY_THRESHOLD'
+                    }), 400
+            except (ValueError, TypeError):
+                return jsonify({
+                    'success': False,
+                    'error': 'buy_threshold 必须是有效的数字',
+                    'error_code': 'INVALID_BUY_THRESHOLD'
+                }), 400
+        else:
+            buy_threshold = 10.0  # 默认值
+        
         # 计算信号
-        result = IndicatorService.calculate_signals(period, file_path, start_date, end_date)
+        result = IndicatorService.calculate_signals(period, file_path, start_date, end_date, buy_threshold)
         
         # 如果计算失败，返回错误
         if not result.get('success', False):
@@ -184,10 +204,50 @@ def backtest():
                 'error_code': 'INVALID_STOP_LOSS'
             }), 400
         
+        # 获取止盈比例（可选）
+        take_profit_percent = data.get('take_profit_percent')
+        if take_profit_percent is not None and take_profit_percent != '':
+            try:
+                take_profit_percent = float(take_profit_percent)
+                if take_profit_percent < 0 or take_profit_percent > 200:
+                    return jsonify({
+                        'success': False,
+                        'error': 'take_profit_percent 必须在0-200之间',
+                        'error_code': 'INVALID_TAKE_PROFIT'
+                    }), 400
+            except (ValueError, TypeError):
+                return jsonify({
+                    'success': False,
+                    'error': 'take_profit_percent 必须是有效的数字',
+                    'error_code': 'INVALID_TAKE_PROFIT'
+                }), 400
+        else:
+            take_profit_percent = None
+        
+        # 获取买入信号阈值（可选，默认10）
+        buy_threshold = data.get('buy_threshold')
+        if buy_threshold is not None and buy_threshold != '':
+            try:
+                buy_threshold = float(buy_threshold)
+                if buy_threshold < 0 or buy_threshold > 100:
+                    return jsonify({
+                        'success': False,
+                        'error': 'buy_threshold 必须在0-100之间',
+                        'error_code': 'INVALID_BUY_THRESHOLD'
+                    }), 400
+            except (ValueError, TypeError):
+                return jsonify({
+                    'success': False,
+                    'error': 'buy_threshold 必须是有效的数字',
+                    'error_code': 'INVALID_BUY_THRESHOLD'
+                }), 400
+        else:
+            buy_threshold = 10.0  # 默认值
+        
         # 获取股票代码
-        stock_code = data.get('stock_code', '300760').strip()
+        stock_code = data.get('stock_code', '159915').strip()
         if not stock_code:
-            stock_code = '300760'
+            stock_code = '159915'
         
         # 构建文件路径
         file_path = data.get('file_path')
@@ -199,7 +259,7 @@ def backtest():
         end_date = data.get('end_date')
         
         # 计算回测结果
-        result = BacktestService.calculate_backtest(period, initial_amount, file_path, start_date, end_date, stop_loss_percent)
+        result = BacktestService.calculate_backtest(period, initial_amount, file_path, start_date, end_date, stop_loss_percent, take_profit_percent, buy_threshold)
         
         # 如果计算失败，返回错误
         if not result.get('success', False):

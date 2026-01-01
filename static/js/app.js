@@ -9,6 +9,7 @@ let currentPeriod = 'D';
 const elements = {
     stockCode: document.getElementById('stockCode'),
     period: document.getElementById('period'),
+    buyThreshold: document.getElementById('buyThreshold'),
     startDate: document.getElementById('startDate'),
     endDate: document.getElementById('endDate'),
     btnCalculate: document.getElementById('btnCalculate'),
@@ -16,6 +17,7 @@ const elements = {
     backtestPanel: document.getElementById('backtestPanel'),
     initialAmount: document.getElementById('initialAmount'),
     stopLossPercent: document.getElementById('stopLossPercent'),
+    takeProfitPercent: document.getElementById('takeProfitPercent'),
     loading: document.getElementById('loading'),
     statisticsSection: document.getElementById('statisticsSection'),
     backtestSection: document.getElementById('backtestSection'),
@@ -134,6 +136,10 @@ async function handleCalculate() {
 
     showLoading();
 
+    // 获取买入阈值
+    const buyThresholdValue = elements.buyThreshold.value.trim();
+    const buyThreshold = buyThresholdValue ? parseFloat(buyThresholdValue) : null;
+
     try {
         const requestBody = {
             period,
@@ -145,6 +151,15 @@ async function handleCalculate() {
         }
         if (endDate) {
             requestBody.end_date = endDate;
+        }
+        
+        // 如果设置了买入阈值，添加到请求中
+        if (buyThreshold !== null) {
+            if (isNaN(buyThreshold) || buyThreshold < 0 || buyThreshold > 100) {
+                alert('买入信号阈值必须在0-100之间');
+                return;
+            }
+            requestBody.buy_threshold = buyThreshold;
         }
 
         const response = await fetch(`${API_BASE_URL}/api/calculate`, {
@@ -186,7 +201,7 @@ function displayCalculateResults(data) {
 
     elements.statisticsSection.style.display = 'block';
 
-    // 显示买卖信号表格
+    // 显示买卖信号表格（分别显示在独立的标签页中）
     displayBuySignals(data.buy_signals);
     displaySellSignals(data.sell_signals);
 
@@ -199,6 +214,9 @@ function displayCalculateResults(data) {
     elements.dataSection.style.display = 'block';
     elements.chartSection.style.display = 'block';
 
+    // 默认显示买入信号标签页
+    switchTab('buySignals');
+
     // 隐藏回测相关
     document.querySelector('[data-tab="trades"]').style.display = 'none';
 }
@@ -208,16 +226,20 @@ function displayBuySignals(signals) {
     elements.buySignalsBody.innerHTML = '';
     
     if (signals.length === 0) {
-        elements.buySignalsBody.innerHTML = '<tr><td colspan="3" style="text-align: center; color: var(--text-secondary);">暂无买入信号</td></tr>';
+        elements.buySignalsBody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--text-secondary);">暂无买入信号</td></tr>';
         return;
     }
 
     signals.forEach(signal => {
         const row = document.createElement('tr');
+        const reason = signal.reason || '趋势线从下向上穿越10';
+        const ma20 = signal.ma20 !== undefined && signal.ma20 !== null ? formatNumber(signal.ma20) : '-';
         row.innerHTML = `
             <td>${signal.date}</td>
             <td>${formatNumber(signal.close)}</td>
             <td>${formatNumber(signal.trend_line)}</td>
+            <td>${ma20}</td>
+            <td>${reason}</td>
         `;
         elements.buySignalsBody.appendChild(row);
     });
@@ -228,16 +250,20 @@ function displaySellSignals(signals) {
     elements.sellSignalsBody.innerHTML = '';
     
     if (signals.length === 0) {
-        elements.sellSignalsBody.innerHTML = '<tr><td colspan="3" style="text-align: center; color: var(--text-secondary);">暂无卖出信号</td></tr>';
+        elements.sellSignalsBody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--text-secondary);">暂无卖出信号</td></tr>';
         return;
     }
 
     signals.forEach(signal => {
         const row = document.createElement('tr');
+        const reason = signal.reason || '-';
+        const ma20 = signal.ma20 !== undefined && signal.ma20 !== null ? formatNumber(signal.ma20) : '-';
         row.innerHTML = `
             <td>${signal.date}</td>
             <td>${formatNumber(signal.close)}</td>
             <td>${formatNumber(signal.trend_line)}</td>
+            <td>${ma20}</td>
+            <td>${reason}</td>
         `;
         elements.sellSignalsBody.appendChild(row);
     });
@@ -363,6 +389,10 @@ async function handleBacktest() {
     const endDate = elements.endDate.value || null;
     const initialAmount = parseFloat(elements.initialAmount.value);
     const stopLossPercent = parseFloat(elements.stopLossPercent.value);
+    const takeProfitPercentValue = elements.takeProfitPercent.value.trim();
+    const takeProfitPercent = takeProfitPercentValue ? parseFloat(takeProfitPercentValue) : null;
+    const buyThresholdValue = elements.buyThreshold.value.trim();
+    const buyThreshold = buyThresholdValue ? parseFloat(buyThresholdValue) : null;
 
     // 验证股票代码
     if (!stockCode) {
@@ -380,6 +410,13 @@ async function handleBacktest() {
         return;
     }
 
+    if (takeProfitPercent !== null) {
+        if (isNaN(takeProfitPercent) || takeProfitPercent < 0 || takeProfitPercent > 200) {
+            alert('止盈比例必须在0-200之间');
+            return;
+        }
+    }
+
     // 验证日期范围
     if (startDate && endDate && startDate > endDate) {
         alert('开始日期不能晚于结束日期');
@@ -395,6 +432,20 @@ async function handleBacktest() {
             initial_amount: initialAmount,
             stop_loss_percent: stopLossPercent
         };
+        
+        // 如果设置了止盈比例，添加到请求中
+        if (takeProfitPercent !== null) {
+            requestBody.take_profit_percent = takeProfitPercent;
+        }
+        
+        // 如果设置了买入阈值，添加到请求中
+        if (buyThreshold !== null) {
+            if (isNaN(buyThreshold) || buyThreshold < 0 || buyThreshold > 100) {
+                alert('买入信号阈值必须在0-100之间');
+                return;
+            }
+            requestBody.buy_threshold = buyThreshold;
+        }
         
         if (startDate) {
             requestBody.start_date = startDate;

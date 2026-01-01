@@ -9,7 +9,7 @@ import secrets
 DATA_DIR = os.getenv('DATA_DIR', 'data')
 
 # 数据文件路径（默认）
-DEFAULT_DATA_FILE = os.getenv('DATA_FILE', os.path.join(DATA_DIR, '300760.xlsx'))
+DEFAULT_DATA_FILE = os.getenv('DATA_FILE', os.path.join(DATA_DIR, '159915.xlsx'))
 
 # Flask配置
 FLASK_HOST = os.getenv('FLASK_HOST', '0.0.0.0')

@@ -5,18 +5,24 @@
 
 import pandas as pd
 import numpy as np
+import logging
+import traceback
 from models.indicator import StockIndicator
 from utils.data_loader import load_stock_data
 from utils.period_converter import convert_to_period
 from services.indicator_service import IndicatorService
+
+# 配置日志
+logger = logging.getLogger(__name__)
 
 
 class BacktestService:
     """回测服务类"""
     
     @classmethod
-    def calculate_backtest(cls, period: str, initial_amount: float, file_path: str = 'data/300760.xlsx',
-                          start_date: str = None, end_date: str = None, stop_loss_percent: float = 5.0):
+    def calculate_backtest(cls, period: str, initial_amount: float, file_path: str = 'data/159915.xlsx',
+                          start_date: str = None, end_date: str = None, stop_loss_percent: float = 5.0,
+                          take_profit_percent: float = None, buy_threshold: float = 10.0):
         """
         计算回测结果
         
@@ -27,6 +33,7 @@ class BacktestService:
             start_date: 开始日期（格式：'YYYY-MM-DD'），可选
             end_date: 结束日期（格式：'YYYY-MM-DD'），可选
             stop_loss_percent: 止损比例（默认5%）
+            take_profit_percent: 止盈比例（可选，None表示不设止盈）
             
         Returns:
             包含回测结果的字典
@@ -36,7 +43,7 @@ class BacktestService:
             period_names = {'D': '日线', 'W': '周线', 'M': '月线'}
             period_name = period_names.get(period.upper(), period)
             
-            # 获取日线数据（用于计算20日均线）
+            # 获取日线数据（使用表格中的MA.MA3作为20日均线）
             daily_df = IndicatorService.get_daily_data(file_path)
             
             # 确保日线数据按日期排序
@@ -53,12 +60,16 @@ class BacktestService:
                     end_dt = pd.to_datetime(end_date)
                     daily_df = daily_df[daily_df['date'] <= end_dt]
             
-            # 计算20日均线（使用日线数据）
-            daily_df['ma20'] = daily_df['close'].rolling(window=20, min_periods=1).mean()
+            # 使用表格中的MA.MA3作为20日均线（如果不存在则计算）
+            if 'ma20' not in daily_df.columns:
+                # 如果数据加载器没有识别到MA.MA3列，则计算20日均线
+                daily_df['ma20'] = daily_df['close'].rolling(window=20, min_periods=1).mean()
+            # 如果ma20列存在但包含NaN，用计算值填充
+            elif daily_df['ma20'].isna().any():
+                # 对于NaN值，使用计算值填充
+                calculated_ma20 = daily_df['close'].rolling(window=20, min_periods=1).mean()
+                daily_df['ma20'] = daily_df['ma20'].fillna(calculated_ma20)
             
-            # 预先计算20日均线的变化（用于快速判断连续下跌）
-            daily_df['ma20_change'] = daily_df['ma20'].diff()
-            daily_df['ma20_declining'] = (daily_df['ma20_change'] < 0).astype(int)
             
             # 创建日期到索引的映射（用于快速查找）
             daily_date_to_idx = {date: idx for idx, date in enumerate(daily_df['date'])}
@@ -93,7 +104,7 @@ class BacktestService:
             indicator = StockIndicator(n=5)
             
             # 计算所有指标
-            result_df = indicator.calculate_all(df.copy())
+            result_df = indicator.calculate_all(df.copy(), buy_threshold=buy_threshold)
             
             # 确保数据按日期排序
             result_df = result_df.sort_values('date').reset_index(drop=True)
@@ -117,8 +128,10 @@ class BacktestService:
             buy_price = 0  # 买入价格（用于止损计算）
             buy_date_idx = -1  # 买入日期在日线数据中的索引
             crossed_ma20 = False  # 是否已上穿20日线
-            ma20_decline_days = 0  # 20日均线连续下跌天数
+            crossed_ma20_date_idx = -1  # 上穿20均线的日期索引（用于后续检查）
+            close_below_ma20_days = 0  # 收盘价在20均线下方连续天数
             last_checked_daily_idx = -1  # 上次检查的日线数据索引
+            last_ma20_check_idx = -1  # 上次检查20均线下方情况的日线索引
             
             # 将DataFrame转换为numpy数组以提高访问速度
             result_dates = result_df['date'].values
@@ -129,7 +142,6 @@ class BacktestService:
             daily_dates = daily_df['date'].values
             daily_ma20 = daily_df['ma20'].values
             daily_closes = daily_df['close'].values
-            daily_ma20_declining = daily_df['ma20_declining'].values
             
             # 遍历数据，模拟交易
             for i in range(len(result_df) - 1):  # 最后一条数据不能买入，因为没有下一条数据
@@ -178,14 +190,14 @@ class BacktestService:
                         insert_pos = np.searchsorted(daily_dates, next_date, side='right')
                         buy_date_idx = insert_pos - 1 if insert_pos > 0 else -1
                     
-                    crossed_ma20 = False  # 重置上穿标志
-                    ma20_decline_days = 0  # 重置下跌天数
+                    crossed_ma20 = False  # 重置上穿标志（买入后需要等待上穿20均线）
+                    crossed_ma20_date_idx = -1  # 重置上穿日期索引
+                    close_below_ma20_days = 0  # 重置收盘价在20均线下方天数
                     last_checked_daily_idx = current_daily_idx if current_daily_idx >= 0 else -1
+                    last_ma20_check_idx = -1  # 重置20均线检查索引
                     
-                    # 检查买入时是否已在20日均线上方
-                    if buy_date_idx >= 0 and buy_date_idx < len(daily_df):
-                        if pd.notna(current_ma20_val) and next_close > current_ma20_val:
-                            crossed_ma20 = True
+                    # 注意：买入后必须等待上穿20均线，即使买入时已在20均线上方，也需要等待后续的上穿动作
+                    # 所以这里不设置 crossed_ma20 = True，而是等待后续的上穿
                     
                     buy_trades.append({
                         'date': pd.Timestamp(next_date).strftime('%Y-%m-%d'),
@@ -199,75 +211,88 @@ class BacktestService:
                     should_sell = False
                     sell_reason = ''
                     
-                    # 卖出条件1：止损检查（向量化计算）
-                    loss_percent = ((current_close - buy_price) / buy_price * 100) if buy_price > 0 else 0
-                    if loss_percent <= -stop_loss_percent:
-                        should_sell = True
-                        sell_reason = f'止损({loss_percent:.2f}%)'
+                    # 计算当前盈亏比例
+                    profit_percent = ((current_close - buy_price) / buy_price * 100) if buy_price > 0 else 0
                     
-                    # 卖出条件2：20日均线连续3天下跌（优化版本）
-                    # 使用向量化操作和预计算数据
-                    if not should_sell and current_daily_idx >= 0 and buy_date_idx >= 0:
-                        # 确定检查的日线数据范围
-                        check_start_idx = max(buy_date_idx + 1, last_checked_daily_idx + 1) if last_checked_daily_idx >= 0 else (buy_date_idx + 1)
-                        check_end_idx = current_daily_idx
-                        
-                        # 确保索引在有效范围内
-                        check_start_idx = max(0, min(check_start_idx, len(daily_df)))
-                        check_end_idx = max(0, min(check_end_idx, len(daily_df)))
-                        
-                        if check_start_idx < check_end_idx:
-                            # 使用向量化操作批量检查
-                            check_range = daily_ma20_declining[check_start_idx:check_end_idx]
-                            check_closes = daily_closes[check_start_idx:check_end_idx]
-                            check_ma20s = daily_ma20[check_start_idx:check_end_idx]
+                    # 卖出条件1：止盈检查（如果设置了止盈比例）
+                    if take_profit_percent is not None and profit_percent >= take_profit_percent:
+                        should_sell = True
+                        sell_reason = f'止盈({profit_percent:.2f}%)'
+                    
+                    # 卖出条件2：买入后上穿20均线，然后收盘价回落到20均线下方3天，第4天卖出
+                    # 严格逻辑：必须先上穿20均线，然后才开始检查收盘价是否在20均线下方
+                    # 注意：必须使用日线数据进行检查，而不是周期数据
+                    elif not should_sell and buy_date_idx >= 0 and current_daily_idx >= 0:
+                        # 第一步：检查是否上穿20均线（从买入日期之后开始检查）
+                        if not crossed_ma20:
+                            # 遍历从买入日期之后到当前日期的所有日线数据，检查是否有上穿动作
+                            # 上穿：前一日收盘价 <= 20均线，当前收盘价 > 20均线
+                            check_start_idx = buy_date_idx + 1  # 从买入日期的下一天开始检查
+                            check_end_idx = current_daily_idx
                             
-                            # 检查是否上穿20日线
-                            if not crossed_ma20:
-                                # 向量化检查上穿
-                                valid_mask = pd.notna(check_ma20s)
-                                if np.any(valid_mask):
-                                    cross_mask = (check_closes > check_ma20s) & valid_mask
-                                    cross_indices = np.where(cross_mask)[0]
-                                    if len(cross_indices) > 0:
-                                        crossed_ma20 = True
-                                        ma20_decline_days = 0
+                            for check_idx in range(check_start_idx, check_end_idx + 1):
+                                if check_idx < 1 or check_idx >= len(daily_df):
+                                    continue
+                                
+                                # 获取当前和前一日的数据
+                                prev_idx = check_idx - 1
+                                if prev_idx < buy_date_idx:  # 确保前一日在买入日期之后或当天
+                                    continue
+                                
+                                prev_close = daily_closes[prev_idx] if prev_idx < len(daily_closes) else None
+                                prev_ma20 = daily_ma20[prev_idx] if prev_idx < len(daily_ma20) else None
+                                curr_close = daily_closes[check_idx] if check_idx < len(daily_closes) else None
+                                curr_ma20 = daily_ma20[check_idx] if check_idx < len(daily_ma20) else None
+                                
+                                # 检查是否上穿：前一日收盘价 <= 20均线，当前收盘价 > 20均线
+                                if (pd.notna(prev_ma20) and pd.notna(prev_close) and 
+                                    pd.notna(curr_ma20) and pd.notna(curr_close) and
+                                    prev_close <= prev_ma20 and curr_close > curr_ma20):
+                                    crossed_ma20 = True
+                                    crossed_ma20_date_idx = check_idx
+                                    close_below_ma20_days = 0
+                                    break  # 找到上穿后，停止检查
+                        
+                        # 第二步：如果已上穿20均线，检查收盘价是否在20均线下方
+                        # 注意：需要从上穿日期之后开始，每天（日线）检查一次，累计连续在20均线下方的天数
+                        if crossed_ma20 and crossed_ma20_date_idx >= 0:
+                            # 从上穿日期的下一天开始，到当前日期，检查所有日线数据
+                            # 确保检查的是连续的交易日，而不是周期数据
+                            check_start_idx = max(crossed_ma20_date_idx + 1, last_ma20_check_idx + 1)
+                            check_end_idx = current_daily_idx
                             
-                            if crossed_ma20:
-                                # 检查连续下跌（使用预计算的declining标志）
-                                # 只检查有效的MA20数据
-                                valid_mask = pd.notna(check_ma20s)
-                                if np.any(valid_mask):
-                                    declining_sequence = check_range[valid_mask]
-                                    
-                                    # 使用numpy高效计算连续下跌天数
-                                    if len(declining_sequence) > 0:
-                                        # 找到所有连续下跌的段
-                                        # 将数组转换为int类型，避免pandas的bool问题
-                                        declining_int = declining_sequence.astype(int)
+                            # 从上一次检查的位置之后开始，到当前日期，遍历所有日线数据
+                            for check_idx in range(check_start_idx, check_end_idx + 1):
+                                if check_idx >= len(daily_df):
+                                    break
+                                
+                                daily_close = daily_closes[check_idx] if check_idx < len(daily_closes) else None
+                                daily_ma20_val = daily_ma20[check_idx] if check_idx < len(daily_ma20) else None
+                                
+                                if pd.notna(daily_ma20_val) and pd.notna(daily_close):
+                                    if daily_close < daily_ma20_val:
+                                        # 收盘价在20均线下方，累加计数
+                                        close_below_ma20_days += 1
                                         
-                                        # 计算连续为1（下跌）的段
-                                        # 使用diff找到变化点
-                                        diff = np.diff(np.concatenate(([0], declining_int, [0])))
-                                        starts = np.where(diff == 1)[0]
-                                        ends = np.where(diff == -1)[0]
-                                        
-                                        if len(starts) > 0 and len(ends) > 0:
-                                            # 计算每段的长度
-                                            lengths = ends - starts
-                                            if len(lengths) > 0:
-                                                max_decline = np.max(lengths)
-                                                # 更新连续下跌天数（累加，但不超过当前检查范围的最大值）
-                                                ma20_decline_days = max(ma20_decline_days, max_decline)
-                                        
-                                        # 如果连续3天下跌，卖出
-                                        if ma20_decline_days >= 3:
+                                        # 如果连续3天在20均线下方，第4天卖出
+                                        # 注意：当close_below_ma20_days == 3时，表示已经连续3天在下方，第4天（当前这天）卖出
+                                        if close_below_ma20_days == 3:
                                             should_sell = True
-                                            sell_reason = '20均线连续3天下跌'
-                        
-                        # 更新最后检查的索引
-                        if current_daily_idx >= 0 and current_daily_idx < len(daily_df):
-                            last_checked_daily_idx = current_daily_idx
+                                            sell_reason = '收盘价在20均线下方3天，第4天卖出'
+                                            last_ma20_check_idx = check_idx  # 更新检查索引
+                                            break  # 找到卖出条件后，停止检查
+                                    else:
+                                        # 如果收盘价回到20均线上方，重置计数
+                                        close_below_ma20_days = 0
+                            
+                            # 更新最后检查的索引（即使没有卖出，也要更新）
+                            if not should_sell:
+                                last_ma20_check_idx = check_end_idx
+                    
+                    # 卖出条件3：止损检查
+                    elif not should_sell and profit_percent <= -stop_loss_percent:
+                        should_sell = True
+                        sell_reason = f'止损({profit_percent:.2f}%)'
                     
                     # 执行卖出
                     if should_sell:
@@ -290,8 +315,10 @@ class BacktestService:
                         shares = 0
                         position = False
                         crossed_ma20 = False
-                        ma20_decline_days = 0
+                        crossed_ma20_date_idx = -1
+                        close_below_ma20_days = 0
                         last_checked_daily_idx = -1
+                        last_ma20_check_idx = -1
                         buy_date_idx = -1
             
             # 如果最后还有持仓，按最后一天收盘价计算
@@ -358,12 +385,15 @@ class BacktestService:
             }
             
         except FileNotFoundError as e:
+            logger.error(f'数据文件未找到: {file_path}', exc_info=True)
             return {
                 'success': False,
                 'error': f'数据文件未找到: {file_path}',
                 'error_code': 'FILE_NOT_FOUND'
             }
         except Exception as e:
+            logger.error(f'回测计算时发生错误: {str(e)}', exc_info=True)
+            logger.error(f'错误堆栈:\n{traceback.format_exc()}')
             return {
                 'success': False,
                 'error': str(e),

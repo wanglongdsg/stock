@@ -7,12 +7,24 @@ from flask import Flask, jsonify, render_template, request, session, redirect, u
 from flask_cors import CORS
 from functools import wraps
 import os
+import logging
 from config import (
     FLASK_HOST, FLASK_PORT, FLASK_DEBUG, DEFAULT_DATA_FILE,
     FLASK_SECRET_KEY, LOGIN_USERNAME, LOGIN_PASSWORD,
     COLOR_RISE, COLOR_FALL
 )
 from api.routes import register_routes
+
+# 配置日志
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),  # 输出到控制台
+        logging.FileHandler('app.log', encoding='utf-8')  # 输出到文件
+    ]
+)
+logger = logging.getLogger(__name__)
 
 # 创建Flask应用
 app = Flask(__name__, template_folder='templates', static_folder='static')
@@ -118,7 +130,7 @@ def api_info():
                 'content_type': 'application/json',
                 'request_body': {
                     'period': 'D|W|M (D=日线, W=周线, M=月线)',
-                    'file_path': '可选，数据文件路径，默认为 data/300760.xlsx'
+                    'file_path': '可选，数据文件路径，默认为 data/159915.xlsx'
                 }
             },
             '/api/backtest': {
@@ -128,7 +140,7 @@ def api_info():
                 'request_body': {
                     'period': 'D|W|M (D=日线, W=周线, M=月线)',
                     'initial_amount': '初始资金金额（必填）',
-                    'file_path': '可选，数据文件路径，默认为 data/300760.xlsx'
+                    'file_path': '可选，数据文件路径，默认为 data/159915.xlsx'
                 }
             }
         }

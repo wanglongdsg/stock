@@ -91,6 +91,19 @@ class StockIndicator:
         Returns:
             添加了趋势线相关列的DataFrame
         """
+        # 如果数据中已经有趋势线列（从Excel中读取的），直接使用
+        if '趋势线_原始' in df.columns:
+            # 使用Excel中的趋势线数据
+            df['趋势线'] = pd.to_numeric(df['趋势线_原始'], errors='coerce')
+            # 删除临时列
+            df = df.drop(columns=['趋势线_原始'])
+            
+            # 计算V12
+            df['V12'] = (df['趋势线'] - df['趋势线'].shift(1)) / df['趋势线'].shift(1).replace(0, np.nan) * 100
+            
+            return df
+        
+        # 如果没有趋势线列，则进行计算
         close = df['close']
         high = df['high']
         low = df['low']
@@ -101,7 +114,7 @@ class StockIndicator:
         
         # 避免除零
         denominator = hhv - llv
-        denominator = denominator.replace(0, np.nan)
+        denominator = denominator.replace(0, pd.NA)
         
         # (C-LLV(L,N))/(HHV(H,N)-LLV(L,N))*100
         ratio = (close - llv) / denominator * 100
@@ -120,11 +133,11 @@ class StockIndicator:
         df['趋势线'] = self.ema(v11, 3)
         
         # V12 = (趋势线 - REF(趋势线,1)) / REF(趋势线,1) * 100
-        df['V12'] = (df['趋势线'] - df['趋势线'].shift(1)) / df['趋势线'].shift(1).replace(0, np.nan) * 100
+        df['V12'] = (df['趋势线'] - df['趋势线'].shift(1)) / df['趋势线'].shift(1).replace(0, pd.NA) * 100
         
         return df
     
-    def calculate_signals(self, df: pd.DataFrame) -> pd.DataFrame:
+    def calculate_signals(self, df: pd.DataFrame, buy_threshold: float = 10.0) -> pd.DataFrame:
         """
         计算买卖信号
         
@@ -144,11 +157,61 @@ class StockIndicator:
         # 超买区判断 (趋势线 > 90)
         df['超买区'] = (trend_line > 90).astype(int)
         
-        # 买入信号: CROSS(趋势线, 10) - 趋势线从下向上穿越10
-        df['买'] = ((trend_line > 10) & (trend_line.shift(1) <= 10)).astype(int)
+        # 买入信号: 趋势线必须先回落到10（或以下），然后从下向上穿越10
+        # 严格逻辑：在从下向上穿越10之前，趋势线必须曾经在10以下
+        # 如果趋势线前面一天/周/月没有回落到10以下，即使拐点向上也不进行购买
         
-        # 卖出信号: CROSS(90, 趋势线) - 趋势线从上向下穿越90
-        df['卖'] = ((trend_line < 90) & (trend_line.shift(1) >= 90)).astype(int)
+        # 初始化买入信号和买入原因
+        buy_signals = pd.Series(0, index=df.index, dtype=int)
+        buy_reasons = pd.Series('', index=df.index, dtype=str)
+        
+        # 记录最近一次趋势线高于buy_threshold的位置
+        last_above_threshold_idx = -1
+        
+        for i in range(1, len(trend_line)):
+            prev_trend = trend_line.iloc[i - 1]
+            curr_trend = trend_line.iloc[i]
+            
+            # 检查是否从下向上穿越buy_threshold（当前>buy_threshold，前一日<=buy_threshold）
+            if curr_trend > buy_threshold and prev_trend <= buy_threshold:
+                # 从下向上穿越buy_threshold，需要检查在最近一次高于buy_threshold的位置之后，是否确实回落到buy_threshold以下
+                has_below_threshold = False
+                
+                if last_above_threshold_idx >= 0:
+                    # 检查从last_above_threshold_idx+1到i-1之间，是否有趋势线<=buy_threshold的情况
+                    # 这确保了在最近一次高于buy_threshold之后，确实有回落到buy_threshold以下
+                    for j in range(last_above_threshold_idx + 1, i):
+                        if trend_line.iloc[j] <= buy_threshold:
+                            has_below_threshold = True
+                            break
+                else:
+                    # 如果之前没有高于buy_threshold的记录，检查从开始到i-1之间是否有<=buy_threshold的情况
+                    # 但需要确保不是第一次就穿越（即之前确实有数据）
+                    if i > 0:
+                        for j in range(i):
+                            if trend_line.iloc[j] <= buy_threshold:
+                                has_below_threshold = True
+                                break
+                
+                if has_below_threshold:
+                    # 确实曾经回落到buy_threshold以下，可以买入
+                    buy_signals.iloc[i] = 1
+                    buy_reasons.iloc[i] = f'趋势线回落到{buy_threshold}以下后，从下向上穿越{buy_threshold}'
+                    last_above_threshold_idx = i
+                else:
+                    # 没有回落到buy_threshold以下，不买入（即使拐点向上）
+                    last_above_threshold_idx = i
+            elif curr_trend > buy_threshold:
+                # 趋势线在buy_threshold以上，更新最近一次高于buy_threshold的位置
+                last_above_threshold_idx = i
+        
+        df['买'] = buy_signals
+        df['买入原因'] = buy_reasons
+        
+        # 卖出信号：已移除"趋势线从上向下穿越90"策略
+        # 卖出逻辑现在只在回测中使用（止盈、止损、20均线下方3天）
+        df['卖'] = pd.Series(0, index=df.index, dtype=int)
+        df['卖出原因'] = pd.Series('', index=df.index, dtype=str)
         
         # AA条件: (趋势线<11) AND FILTER((趋势线<=11),15) AND C<中线
         # FILTER函数：过滤连续满足条件的信号，只保留第一次
@@ -240,13 +303,14 @@ class StockIndicator:
         
         return result
     
-    def calculate_all(self, df: pd.DataFrame) -> pd.DataFrame:
+    def calculate_all(self, df: pd.DataFrame, buy_threshold: float = 10.0) -> pd.DataFrame:
         """
         计算所有指标
         
         Args:
             df: 包含股票数据的DataFrame，需要包含'date', 'open', 'high', 'low', 'close', 'volume'列
                 如果列名不同，需要先重命名
+            buy_threshold: 买入信号阈值，趋势线从下向上穿越此值进行买入（默认10.0）
             
         Returns:
             添加了所有指标列的DataFrame
@@ -262,7 +326,7 @@ class StockIndicator:
         df = self.calculate_trend_line(df)
         
         # 计算信号
-        df = self.calculate_signals(df)
+        df = self.calculate_signals(df, buy_threshold=buy_threshold)
         
         return df
 

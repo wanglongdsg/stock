@@ -26,7 +26,7 @@ def main(period: str = 'D'):
         print(f"股票技术指标计算程序 - {period_name}")
         print("=" * 60)
         print("\n正在加载数据...")
-        df = load_stock_data('data/300760.xlsx')
+        df = load_stock_data('data/159915.xlsx')
         print(f"[OK] 原始日线数据加载成功，共 {len(df)} 条记录")
         
         # 如果选择周线或月线，进行周期转换
@@ -101,13 +101,13 @@ def main(period: str = 'D'):
             print(sell_display.to_string(index=False))
         
         # 保存结果
-        # output_file = 'data/300760_result.xlsx'
+        # output_file = 'data/159915_result.xlsx'
         # result_df.to_excel(output_file, index=False)
         # print(f"\n[OK] 完整结果已保存到: {output_file}")
         print("=" * 60)
         
     except FileNotFoundError:
-        print("错误: 找不到数据文件 'data/300760.xlsx'")
+        print("错误: 找不到数据文件 'data/159915.xlsx'")
         print("请确保数据文件存在于指定路径")
     except Exception as e:
         print(f"错误: {e}")

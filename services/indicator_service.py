@@ -4,9 +4,14 @@
 """
 
 import pandas as pd
+import logging
+import traceback
 from models.indicator import StockIndicator
 from utils.data_loader import load_stock_data
 from utils.period_converter import convert_to_period
+
+# 配置日志
+logger = logging.getLogger(__name__)
 
 
 class IndicatorService:
@@ -16,7 +21,7 @@ class IndicatorService:
     _cached_daily_data = {}
     
     @classmethod
-    def get_daily_data(cls, file_path: str = 'data/300760.xlsx'):
+    def get_daily_data(cls, file_path: str = 'data/159915.xlsx'):
         """
         获取日线数据（带缓存）
         
@@ -32,8 +37,8 @@ class IndicatorService:
         return cls._cached_daily_data[file_path]
     
     @classmethod
-    def calculate_signals(cls, period: str, file_path: str = 'data/300760.xlsx', 
-                         start_date: str = None, end_date: str = None):
+    def calculate_signals(cls, period: str, file_path: str = 'data/159915.xlsx', 
+                         start_date: str = None, end_date: str = None, buy_threshold: float = 10.0):
         """
         计算指定周期的买卖信号
         
@@ -42,6 +47,7 @@ class IndicatorService:
             file_path: 数据文件路径
             start_date: 开始日期（格式：'YYYY-MM-DD'），可选
             end_date: 结束日期（格式：'YYYY-MM-DD'），可选
+            buy_threshold: 买入信号阈值，趋势线从下向上穿越此值进行买入（默认10.0）
             
         Returns:
             包含信号信息的字典
@@ -53,6 +59,38 @@ class IndicatorService:
             
             # 获取日线数据
             daily_df = cls.get_daily_data(file_path)
+            
+            # 计算20日均线（使用日线数据）
+            if 'date' in daily_df.columns:
+                daily_df['date'] = pd.to_datetime(daily_df['date'])
+                daily_df = daily_df.sort_values('date').reset_index(drop=True)
+            
+            # 按时间范围过滤日线数据（使用表格中的MA.MA3作为20日均线）
+            if start_date:
+                start_dt = pd.to_datetime(start_date)
+                daily_df_filtered = daily_df[daily_df['date'] >= start_dt].copy()
+            else:
+                daily_df_filtered = daily_df.copy()
+            
+            if end_date:
+                end_dt = pd.to_datetime(end_date)
+                daily_df_filtered = daily_df_filtered[daily_df_filtered['date'] <= end_dt]
+            
+            # 使用表格中的MA.MA3作为20日均线（如果不存在则计算）
+            if 'ma20' not in daily_df_filtered.columns:
+                # 如果数据加载器没有识别到MA.MA3列，则计算20日均线
+                daily_df_filtered['ma20'] = daily_df_filtered['close'].rolling(window=20, min_periods=1).mean()
+            # 如果ma20列存在但包含NaN，用计算值填充
+            elif daily_df_filtered['ma20'].isna().any():
+                # 对于NaN值，使用计算值填充
+                calculated_ma20 = daily_df_filtered['close'].rolling(window=20, min_periods=1).mean()
+                daily_df_filtered['ma20'] = daily_df_filtered['ma20'].fillna(calculated_ma20)
+            
+            # 创建日期到20日均线的映射（用于快速查找）
+            daily_ma20_map = {}
+            for idx, row in daily_df_filtered.iterrows():
+                if pd.notna(row['ma20']):
+                    daily_ma20_map[row['date']] = row['ma20']
             
             # 如果选择周线或月线，进行周期转换
             if period.upper() != 'D':
@@ -85,7 +123,7 @@ class IndicatorService:
             indicator = StockIndicator(n=5)
             
             # 计算所有指标
-            result_df = indicator.calculate_all(df.copy())
+            result_df = indicator.calculate_all(df.copy(), buy_threshold=buy_threshold)
             
             # 统计信号
             buy_signals_count = int(result_df['买'].sum())
@@ -97,35 +135,73 @@ class IndicatorService:
             buy_positions = result_df[result_df['买'] == 1]
             buy_signals_list = []
             if len(buy_positions) > 0:
-                buy_display = buy_positions[['date', 'close', '趋势线']].copy()
+                # 包含买入原因列
+                buy_cols = ['date', 'close', '趋势线', '买入原因']
+                available_buy_cols = [col for col in buy_cols if col in buy_positions.columns]
+                buy_display = buy_positions[available_buy_cols].copy()
                 if 'date' in buy_display.columns:
                     buy_display['date'] = pd.to_datetime(buy_display['date'])
                     # 按日期倒序排序
                     buy_display = buy_display.sort_values('date', ascending=False)
                     buy_display['date'] = buy_display['date'].dt.strftime('%Y-%m-%d')
                 for _, row in buy_display.iterrows():
-                    buy_signals_list.append({
+                    signal_date = pd.to_datetime(row['date'])
+                    # 获取该日期对应的日线20日均线
+                    ma20_value = None
+                    # 查找最接近的日线数据
+                    for check_date in pd.date_range(end=signal_date, periods=10, freq='D'):
+                        if check_date in daily_ma20_map:
+                            ma20_value = daily_ma20_map[check_date]
+                            break
+                    
+                    signal_item = {
                         'date': str(row['date']),
                         'close': float(row['close']),
-                        'trend_line': float(row['趋势线'])
-                    })
+                        'trend_line': float(row['趋势线']),
+                        'ma20': float(ma20_value) if ma20_value is not None and pd.notna(ma20_value) else None
+                    }
+                    # 添加买入原因（如果有）
+                    if '买入原因' in row:
+                        signal_item['reason'] = str(row['买入原因']) if pd.notna(row['买入原因']) else '趋势线从下向上穿越10'
+                    else:
+                        signal_item['reason'] = '趋势线从下向上穿越10'
+                    buy_signals_list.append(signal_item)
             
             # 获取卖出信号位置
             sell_positions = result_df[result_df['卖'] == 1]
             sell_signals_list = []
             if len(sell_positions) > 0:
-                sell_display = sell_positions[['date', 'close', '趋势线']].copy()
+                # 包含卖出原因列
+                sell_cols = ['date', 'close', '趋势线', '卖出原因']
+                available_sell_cols = [col for col in sell_cols if col in sell_positions.columns]
+                sell_display = sell_positions[available_sell_cols].copy()
                 if 'date' in sell_display.columns:
                     sell_display['date'] = pd.to_datetime(sell_display['date'])
                     # 按日期倒序排序
                     sell_display = sell_display.sort_values('date', ascending=False)
                     sell_display['date'] = sell_display['date'].dt.strftime('%Y-%m-%d')
                 for _, row in sell_display.iterrows():
-                    sell_signals_list.append({
+                    signal_date = pd.to_datetime(row['date'])
+                    # 获取该日期对应的日线20日均线
+                    ma20_value = None
+                    # 查找最接近的日线数据
+                    for check_date in pd.date_range(end=signal_date, periods=10, freq='D'):
+                        if check_date in daily_ma20_map:
+                            ma20_value = daily_ma20_map[check_date]
+                            break
+                    
+                    signal_item = {
                         'date': str(row['date']),
                         'close': float(row['close']),
-                        'trend_line': float(row['趋势线'])
-                    })
+                        'trend_line': float(row['趋势线']),
+                        'ma20': float(ma20_value) if ma20_value is not None and pd.notna(ma20_value) else None
+                    }
+                    # 添加卖出原因（如果有）
+                    if '卖出原因' in row:
+                        signal_item['reason'] = str(row['卖出原因']) if pd.notna(row['卖出原因']) else '-'
+                    else:
+                        signal_item['reason'] = '-'
+                    sell_signals_list.append(signal_item)
             
             # 获取最近20条关键指标数据（按日期倒序）
             key_cols = ['date', 'close', '支撑', '阻力', '中线', '趋势线', '买', '卖']
@@ -168,12 +244,15 @@ class IndicatorService:
             }
             
         except FileNotFoundError as e:
+            logger.error(f'数据文件未找到: {file_path}', exc_info=True)
             return {
                 'success': False,
                 'error': f'数据文件未找到: {file_path}',
                 'error_code': 'FILE_NOT_FOUND'
             }
         except Exception as e:
+            logger.error(f'计算指标时发生错误: {str(e)}', exc_info=True)
+            logger.error(f'错误堆栈:\n{traceback.format_exc()}')
             return {
                 'success': False,
                 'error': str(e),
