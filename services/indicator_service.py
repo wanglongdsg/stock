@@ -12,8 +12,8 @@ from utils.period_converter import convert_to_period
 class IndicatorService:
     """指标计算服务类"""
     
-    # 全局缓存，避免重复加载数据
-    _cached_daily_data = None
+    # 全局缓存，避免重复加载数据（按文件路径缓存）
+    _cached_daily_data = {}
     
     @classmethod
     def get_daily_data(cls, file_path: str = 'data/300760.xlsx'):
@@ -22,22 +22,26 @@ class IndicatorService:
         
         Args:
             file_path: 数据文件路径
-            
+
         Returns:
             日线数据DataFrame
         """
-        if cls._cached_daily_data is None:
-            cls._cached_daily_data = load_stock_data(file_path)
-        return cls._cached_daily_data
+        # 使用文件路径作为缓存键
+        if file_path not in cls._cached_daily_data:
+            cls._cached_daily_data[file_path] = load_stock_data(file_path)
+        return cls._cached_daily_data[file_path]
     
     @classmethod
-    def calculate_signals(cls, period: str, file_path: str = 'data/300760.xlsx'):
+    def calculate_signals(cls, period: str, file_path: str = 'data/300760.xlsx', 
+                         start_date: str = None, end_date: str = None):
         """
         计算指定周期的买卖信号
         
         Args:
             period: 周期类型，'D'=日线, 'W'=周线, 'M'=月线
             file_path: 数据文件路径
+            start_date: 开始日期（格式：'YYYY-MM-DD'），可选
+            end_date: 结束日期（格式：'YYYY-MM-DD'），可选
             
         Returns:
             包含信号信息的字典
@@ -55,6 +59,27 @@ class IndicatorService:
                 df = convert_to_period(daily_df, period.upper())
             else:
                 df = daily_df.copy()
+            
+            # 确保date列是datetime类型
+            if 'date' in df.columns:
+                df['date'] = pd.to_datetime(df['date'])
+                
+                # 按时间范围过滤数据
+                if start_date:
+                    start_dt = pd.to_datetime(start_date)
+                    df = df[df['date'] >= start_dt]
+                
+                if end_date:
+                    end_dt = pd.to_datetime(end_date)
+                    df = df[df['date'] <= end_dt]
+            
+            # 如果过滤后没有数据，返回错误
+            if len(df) == 0:
+                return {
+                    'success': False,
+                    'error': '指定时间范围内没有数据',
+                    'error_code': 'NO_DATA_IN_RANGE'
+                }
             
             # 创建指标计算器
             indicator = StockIndicator(n=5)

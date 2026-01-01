@@ -14,7 +14,8 @@ class BacktestService:
     """回测服务类"""
     
     @classmethod
-    def calculate_backtest(cls, period: str, initial_amount: float, file_path: str = 'data/300760.xlsx'):
+    def calculate_backtest(cls, period: str, initial_amount: float, file_path: str = 'data/300760.xlsx',
+                          start_date: str = None, end_date: str = None):
         """
         计算回测结果
         
@@ -22,6 +23,8 @@ class BacktestService:
             period: 周期类型，'D'=日线, 'W'=周线, 'M'=月线
             initial_amount: 初始资金金额
             file_path: 数据文件路径
+            start_date: 开始日期（格式：'YYYY-MM-DD'），可选
+            end_date: 结束日期（格式：'YYYY-MM-DD'），可选
             
         Returns:
             包含回测结果的字典
@@ -39,6 +42,27 @@ class BacktestService:
                 df = convert_to_period(daily_df, period.upper())
             else:
                 df = daily_df.copy()
+            
+            # 确保date列是datetime类型
+            if 'date' in df.columns:
+                df['date'] = pd.to_datetime(df['date'])
+                
+                # 按时间范围过滤数据
+                if start_date:
+                    start_dt = pd.to_datetime(start_date)
+                    df = df[df['date'] >= start_dt]
+                
+                if end_date:
+                    end_dt = pd.to_datetime(end_date)
+                    df = df[df['date'] <= end_dt]
+            
+            # 如果过滤后没有数据，返回错误
+            if len(df) == 0:
+                return {
+                    'success': False,
+                    'error': '指定时间范围内没有数据',
+                    'error_code': 'NO_DATA_IN_RANGE'
+                }
             
             # 创建指标计算器
             indicator = StockIndicator(n=5)

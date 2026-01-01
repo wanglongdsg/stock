@@ -2,12 +2,30 @@
 API路由定义
 """
 
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, session
+from functools import wraps
+import os
 from services.indicator_service import IndicatorService
 from services.backtest_service import BacktestService
+from config import DATA_DIR
 
 # 创建蓝图
 api_bp = Blueprint('api', __name__, url_prefix='/api')
+
+
+# API登录验证装饰器
+def api_login_required(f):
+    """API登录验证装饰器（返回JSON错误）"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'logged_in' not in session or not session['logged_in']:
+            return jsonify({
+                'success': False,
+                'error': '未登录或登录已过期，请先登录',
+                'error_code': 'UNAUTHORIZED'
+            }), 401
+        return f(*args, **kwargs)
+    return decorated_function
 
 
 @api_bp.route('/health', methods=['GET'])
@@ -22,6 +40,7 @@ def health():
 
 
 @api_bp.route('/calculate', methods=['POST'])
+@api_login_required
 def calculate():
     """
     计算股票技术指标信号
@@ -56,11 +75,22 @@ def calculate():
                 'error_code': 'INVALID_PERIOD'
             }), 400
         
-        # 可选：获取文件路径参数
-        file_path = data.get('file_path', 'data/300760.xlsx')
+        # 获取股票代码
+        stock_code = data.get('stock_code', '300760').strip()
+        if not stock_code:
+            stock_code = '300760'
+        
+        # 构建文件路径
+        file_path = data.get('file_path')
+        if not file_path:
+            file_path = os.path.join(DATA_DIR, f'{stock_code}.xlsx')
+        
+        # 获取时间范围参数
+        start_date = data.get('start_date')
+        end_date = data.get('end_date')
         
         # 计算信号
-        result = IndicatorService.calculate_signals(period, file_path)
+        result = IndicatorService.calculate_signals(period, file_path, start_date, end_date)
         
         # 如果计算失败，返回错误
         if not result.get('success', False):
@@ -78,6 +108,7 @@ def calculate():
 
 
 @api_bp.route('/backtest', methods=['POST'])
+@api_login_required
 def backtest():
     """
     回测接口：按照买卖信号进行全仓回测
@@ -136,11 +167,22 @@ def backtest():
                 'error_code': 'INVALID_AMOUNT'
             }), 400
         
-        # 可选：获取文件路径参数
-        file_path = data.get('file_path', 'data/300760.xlsx')
+        # 获取股票代码
+        stock_code = data.get('stock_code', '300760').strip()
+        if not stock_code:
+            stock_code = '300760'
+        
+        # 构建文件路径
+        file_path = data.get('file_path')
+        if not file_path:
+            file_path = os.path.join(DATA_DIR, f'{stock_code}.xlsx')
+        
+        # 获取时间范围参数
+        start_date = data.get('start_date')
+        end_date = data.get('end_date')
         
         # 计算回测结果
-        result = BacktestService.calculate_backtest(period, initial_amount, file_path)
+        result = BacktestService.calculate_backtest(period, initial_amount, file_path, start_date, end_date)
         
         # 如果计算失败，返回错误
         if not result.get('success', False):

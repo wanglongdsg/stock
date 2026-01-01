@@ -8,7 +8,14 @@ from .settings import (
     FLASK_PORT,
     FLASK_DEBUG,
     DATABASE_URL,
-    INDICATOR_N
+    INDICATOR_N,
+    FLASK_SECRET_KEY,
+    LOGIN_USERNAME,
+    LOGIN_PASSWORD,
+    DATA_DIR,
+    DEFAULT_DATA_FILE,
+    COLOR_RISE,
+    COLOR_FALL
 )
 
 __all__ = [
@@ -17,7 +24,12 @@ __all__ = [
     'FLASK_PORT',
     'FLASK_DEBUG',
     'DATABASE_URL',
-    'INDICATOR_N'
+    'INDICATOR_N',
+    'FLASK_SECRET_KEY',
+    'LOGIN_USERNAME',
+    'LOGIN_PASSWORD',
+    'DATA_DIR',
+    'DEFAULT_DATA_FILE',
+    'COLOR_RISE',
+    'COLOR_FALL'
 ]
-
-

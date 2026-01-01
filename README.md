@@ -51,7 +51,13 @@ python app.py
 
 服务将在 `http://0.0.0.0:5000` 启动。
 
-### 3. 使用命令行工具
+### 3. 访问Web界面
+
+启动服务后，在浏览器中访问：
+- **Web界面**: `http://localhost:5000/` 或 `http://localhost:5000/index`
+- **API信息**: `http://localhost:5000/api`
+
+### 4. 使用命令行工具
 
 ```bash
 # 日线
@@ -95,6 +101,22 @@ curl -X POST http://localhost:5000/api/backtest \
 - `FLASK_DEBUG`: 调试模式（默认：`True`）
 - `DATABASE_URL`: 数据库URL（预留）
 - `INDICATOR_N`: 指标计算周期（默认：`5`）
+- `LOGIN_USERNAME`: 登录账号（默认：`admin`，每次启动会生成随机密码）
+- `LOGIN_PASSWORD`: 登录密码（默认：随机生成，启动时在控制台显示）
+- `FLASK_SECRET_KEY`: Session密钥（默认：随机生成）
+- `STOCK_COLOR_SCHEME`: 股票涨跌颜色方案（默认：`CN`）
+  - `CN`: 红涨绿跌（中国习惯）
+  - `US`: 绿涨红跌（美国习惯）
+
+**登录说明**：
+- 系统启动时会在控制台打印登录账号和密码
+- 可以通过环境变量 `LOGIN_USERNAME` 和 `LOGIN_PASSWORD` 自定义账号密码
+- 所有页面和API接口都需要登录后才能访问
+
+**颜色配置说明**：
+- 默认使用红涨绿跌（中国习惯）
+- 可通过环境变量 `STOCK_COLOR_SCHEME` 设置为 `US` 使用绿涨红跌（美国习惯）
+- 颜色配置会应用到所有收益、收益率等数值显示
 
 ## 技术指标说明
 
