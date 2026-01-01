@@ -60,15 +60,24 @@ class BacktestService:
                     end_dt = pd.to_datetime(end_date)
                     daily_df = daily_df[daily_df['date'] <= end_dt]
             
-            # 使用表格中的MA.MA3作为20日均线（如果不存在则计算）
+            # 使用表格中的MA.MA3作为20日均线（完全使用表格中的值，不计算）
             if 'ma20' not in daily_df.columns:
-                # 如果数据加载器没有识别到MA.MA3列，则计算20日均线
-                daily_df['ma20'] = daily_df['close'].rolling(window=20, min_periods=1).mean()
-            # 如果ma20列存在但包含NaN，用计算值填充
-            elif daily_df['ma20'].isna().any():
-                # 对于NaN值，使用计算值填充
-                calculated_ma20 = daily_df['close'].rolling(window=20, min_periods=1).mean()
-                daily_df['ma20'] = daily_df['ma20'].fillna(calculated_ma20)
+                return {
+                    'success': False,
+                    'error': '数据文件中未找到MA.MA3列（20日均线），请确保数据文件包含此列',
+                    'error_code': 'MA20_COLUMN_NOT_FOUND'
+                }
+            
+            # 检查ma20列是否有有效值
+            if daily_df['ma20'].notna().sum() == 0:
+                return {
+                    'success': False,
+                    'error': '数据文件中的MA.MA3列（20日均线）没有有效值，请检查数据文件',
+                    'error_code': 'MA20_NO_VALID_DATA'
+                }
+            
+            # 完全使用表格中的MA.MA3值，不进行任何计算或填充
+            # 对于NaN值，保持NaN，在后续使用时会跳过这些行
             
             
             # 创建日期到索引的映射（用于快速查找）
@@ -127,6 +136,7 @@ class BacktestService:
             sell_trades = []  # 卖出交易记录
             buy_price = 0  # 买入价格（用于止损计算）
             buy_date_idx = -1  # 买入日期在日线数据中的索引
+            buy_below_ma20 = False  # 买入时收盘价是否在20均线下方（只有这种情况才触发上穿策略）
             crossed_ma20 = False  # 是否已上穿20日线
             crossed_ma20_date_idx = -1  # 上穿20均线的日期索引（用于后续检查）
             close_below_ma20_days = 0  # 收盘价在20均线下方连续天数
@@ -190,14 +200,23 @@ class BacktestService:
                         insert_pos = np.searchsorted(daily_dates, next_date, side='right')
                         buy_date_idx = insert_pos - 1 if insert_pos > 0 else -1
                     
+                    # 检查买入时收盘价是否在20均线下方（只有这种情况才触发上穿策略）
+                    buy_below_ma20 = False
+                    if buy_date_idx >= 0 and buy_date_idx < len(daily_df):
+                        buy_day_close = daily_closes[buy_date_idx] if buy_date_idx < len(daily_closes) else None
+                        buy_day_ma20 = daily_ma20[buy_date_idx] if buy_date_idx < len(daily_ma20) else None
+                        # 如果买入时收盘价在20均线下方，才启用上穿策略
+                        if pd.notna(buy_day_close) and pd.notna(buy_day_ma20):
+                            buy_below_ma20 = buy_day_close < buy_day_ma20
+                    
                     crossed_ma20 = False  # 重置上穿标志（买入后需要等待上穿20均线）
                     crossed_ma20_date_idx = -1  # 重置上穿日期索引
                     close_below_ma20_days = 0  # 重置收盘价在20均线下方天数
                     last_checked_daily_idx = current_daily_idx if current_daily_idx >= 0 else -1
                     last_ma20_check_idx = -1  # 重置20均线检查索引
                     
-                    # 注意：买入后必须等待上穿20均线，即使买入时已在20均线上方，也需要等待后续的上穿动作
-                    # 所以这里不设置 crossed_ma20 = True，而是等待后续的上穿
+                    # 注意：只有买入时收盘价在20均线下方，才启用"上穿20均线后回落3天卖出"策略
+                    # 如果买入时已在20均线上方，则不启用此策略（只使用止盈和止损）
                     
                     buy_trades.append({
                         'date': pd.Timestamp(next_date).strftime('%Y-%m-%d'),
@@ -220,9 +239,11 @@ class BacktestService:
                         sell_reason = f'止盈({profit_percent:.2f}%)'
                     
                     # 卖出条件2：买入后上穿20均线，然后收盘价回落到20均线下方3天，第4天卖出
-                    # 严格逻辑：必须先上穿20均线，然后才开始检查收盘价是否在20均线下方
+                    # 严格逻辑：
+                    # 1. 只有买入时收盘价在20均线下方，才启用此策略
+                    # 2. 必须先上穿20均线，然后才开始检查收盘价是否在20均线下方
                     # 注意：必须使用日线数据进行检查，而不是周期数据
-                    elif not should_sell and buy_date_idx >= 0 and current_daily_idx >= 0:
+                    elif not should_sell and buy_below_ma20 and buy_date_idx >= 0 and current_daily_idx >= 0:
                         # 第一步：检查是否上穿20均线（从买入日期之后开始检查）
                         if not crossed_ma20:
                             # 遍历从买入日期之后到当前日期的所有日线数据，检查是否有上穿动作
@@ -245,6 +266,7 @@ class BacktestService:
                                 curr_ma20 = daily_ma20[check_idx] if check_idx < len(daily_ma20) else None
                                 
                                 # 检查是否上穿：前一日收盘价 <= 20均线，当前收盘价 > 20均线
+                                # 注意：只使用表格中的MA.MA3值，如果值为NaN则跳过（不进行计算填充）
                                 if (pd.notna(prev_ma20) and pd.notna(prev_close) and 
                                     pd.notna(curr_ma20) and pd.notna(curr_close) and
                                     prev_close <= prev_ma20 and curr_close > curr_ma20):
@@ -269,6 +291,7 @@ class BacktestService:
                                 daily_close = daily_closes[check_idx] if check_idx < len(daily_closes) else None
                                 daily_ma20_val = daily_ma20[check_idx] if check_idx < len(daily_ma20) else None
                                 
+                                # 注意：只使用表格中的MA.MA3值，如果值为NaN则跳过（不进行计算填充）
                                 if pd.notna(daily_ma20_val) and pd.notna(daily_close):
                                     if daily_close < daily_ma20_val:
                                         # 收盘价在20均线下方，累加计数
@@ -314,6 +337,7 @@ class BacktestService:
                         })
                         shares = 0
                         position = False
+                        buy_below_ma20 = False
                         crossed_ma20 = False
                         crossed_ma20_date_idx = -1
                         close_below_ma20_days = 0

@@ -76,15 +76,16 @@ class IndicatorService:
                 end_dt = pd.to_datetime(end_date)
                 daily_df_filtered = daily_df_filtered[daily_df_filtered['date'] <= end_dt]
             
-            # 使用表格中的MA.MA3作为20日均线（如果不存在则计算）
+            # 使用表格中的MA.MA3作为20日均线（完全使用表格中的值，不计算）
             if 'ma20' not in daily_df_filtered.columns:
-                # 如果数据加载器没有识别到MA.MA3列，则计算20日均线
-                daily_df_filtered['ma20'] = daily_df_filtered['close'].rolling(window=20, min_periods=1).mean()
-            # 如果ma20列存在但包含NaN，用计算值填充
-            elif daily_df_filtered['ma20'].isna().any():
-                # 对于NaN值，使用计算值填充
-                calculated_ma20 = daily_df_filtered['close'].rolling(window=20, min_periods=1).mean()
-                daily_df_filtered['ma20'] = daily_df_filtered['ma20'].fillna(calculated_ma20)
+                return {
+                    'success': False,
+                    'error': '数据文件中未找到MA.MA3列（20日均线），请确保数据文件包含此列',
+                    'error_code': 'MA20_COLUMN_NOT_FOUND'
+                }
+            
+            # 完全使用表格中的MA.MA3值，不进行任何计算或填充
+            # 对于NaN值，保持NaN，在后续使用时会跳过这些行
             
             # 创建日期到20日均线的映射（用于快速查找）
             daily_ma20_map = {}
