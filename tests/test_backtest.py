@@ -4,6 +4,11 @@
 
 import requests
 import json
+import sys
+import os
+
+# 添加项目根目录到路径
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 BASE_URL = "http://localhost:5000"
 
@@ -51,9 +56,11 @@ def test_backtest(period: str, initial_amount: float):
             print(f"错误代码: {result.get('error_code')}")
         
         print()
+        return result.get('success', False)
         
     except Exception as e:
         print(f"错误: {e}\n")
+        return False
 
 
 def main():
@@ -70,10 +77,12 @@ def main():
     
     # 测试月线回测
     test_backtest('M', 100000)
+    
+    print("=" * 60)
+    print("测试完成")
+    print("=" * 60)
 
 
 if __name__ == '__main__':
     main()
-
-
 

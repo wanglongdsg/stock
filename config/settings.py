@@ -18,5 +18,3 @@ DATABASE_URL = os.getenv('DATABASE_URL', 'sqlite:///stock.db')
 # 指标计算参数
 INDICATOR_N = int(os.getenv('INDICATOR_N', 5))
 
-
-

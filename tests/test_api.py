@@ -5,6 +5,11 @@ API测试脚本
 
 import requests
 import json
+import sys
+import os
+
+# 添加项目根目录到路径
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 BASE_URL = "http://localhost:5000"
 
@@ -19,8 +24,10 @@ def test_health():
         print(f"状态码: {response.status_code}")
         print(f"响应: {json.dumps(response.json(), indent=2, ensure_ascii=False)}")
         print()
+        return response.status_code == 200
     except Exception as e:
         print(f"错误: {e}\n")
+        return False
 
 
 def test_calculate(period: str):
@@ -64,9 +71,11 @@ def test_calculate(period: str):
             print(f"错误代码: {result.get('error_code')}")
         
         print()
+        return result.get('success', False)
         
     except Exception as e:
         print(f"错误: {e}\n")
+        return False
 
 
 def main():
@@ -76,7 +85,12 @@ def main():
     print("=" * 60 + "\n")
     
     # 测试健康检查
-    test_health()
+    health_ok = test_health()
+    
+    if not health_ok:
+        print("警告: 健康检查失败，请确保服务已启动")
+        print("启动服务: python app.py")
+        return
     
     # 测试日线
     test_calculate('D')
@@ -94,6 +108,4 @@ def main():
 
 if __name__ == '__main__':
     main()
-
-
 

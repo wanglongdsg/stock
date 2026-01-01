@@ -492,15 +492,16 @@ uwsgi --http 0.0.0.0:5000 --wsgi-file app.py --callable app --processes 4
 ### Docker部署（可选）
 
 创建 `Dockerfile`:
+
 ```dockerfile
 FROM python:3.9-slim
 
 WORKDIR /app
 
-COPY requirements.txt .
+COPY ../requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . .
+COPY .. .
 
 EXPOSE 5000
 
