@@ -193,7 +193,7 @@ def backtest():
             sell_strategies = ['stop_loss', 'take_profit', 'below_ma20']  # 默认全选
         
         # 验证策略名称
-        valid_strategies = ['stop_loss', 'take_profit', 'below_ma20']
+        valid_strategies = ['stop_loss', 'take_profit', 'below_ma20', 'trailing_stop_loss']
         sell_strategies = [s for s in sell_strategies if s in valid_strategies]
         
         if len(sell_strategies) == 0:
@@ -207,6 +207,7 @@ def backtest():
         stop_loss_percent = None
         take_profit_percent = None
         below_ma20_days = None
+        trailing_stop_percent = None
         
         # 获取止损比例（如果选中了止损策略）
         if 'stop_loss' in sell_strategies:
@@ -265,6 +266,24 @@ def backtest():
                     'error_code': 'INVALID_BELOW_MA20_DAYS'
                 }), 400
         
+        # 获取追踪止损比例（如果选中了追踪止损策略）
+        if 'trailing_stop_loss' in sell_strategies:
+            trailing_stop_percent = data.get('trailing_stop_percent', 15.0)
+            try:
+                trailing_stop_percent = float(trailing_stop_percent)
+                if trailing_stop_percent < 0 or trailing_stop_percent > 50:
+                    return jsonify({
+                        'success': False,
+                        'error': 'trailing_stop_percent 必须在0-50之间',
+                        'error_code': 'INVALID_TRAILING_STOP_LOSS'
+                    }), 400
+            except (ValueError, TypeError):
+                return jsonify({
+                    'success': False,
+                    'error': 'trailing_stop_percent 必须是有效的数字',
+                    'error_code': 'INVALID_TRAILING_STOP_LOSS'
+                }), 400
+        
         # 获取买入信号阈值（可选，默认10）
         buy_threshold = data.get('buy_threshold')
         if buy_threshold is not None and buy_threshold != '':
@@ -303,7 +322,7 @@ def backtest():
         result = BacktestService.calculate_backtest(
             period, initial_amount, file_path, start_date, end_date, 
             stop_loss_percent, take_profit_percent, buy_threshold, 
-            below_ma20_days, sell_strategies
+            below_ma20_days, sell_strategies, trailing_stop_percent
         )
         
         # 如果计算失败，返回错误

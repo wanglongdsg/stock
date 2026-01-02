@@ -17,9 +17,11 @@ const elements = {
     stopLossPercent: document.getElementById('stopLossPercent'),
     takeProfitPercent: document.getElementById('takeProfitPercent'),
     belowMa20Days: document.getElementById('belowMa20Days'),
+    trailingStopPercent: document.getElementById('trailingStopPercent'),
     stopLossGroup: document.getElementById('stopLossGroup'),
     takeProfitGroup: document.getElementById('takeProfitGroup'),
     belowMa20Group: document.getElementById('belowMa20Group'),
+    trailingStopLossGroup: document.getElementById('trailingStopLossGroup'),
     themeSwitcher: document.getElementById('themeSwitcher'),
     loading: document.getElementById('loading'),
     backtestSection: document.getElementById('backtestSection'),
@@ -47,7 +49,10 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // 绑定卖出策略选择事件
     if (elements.sellStrategies) {
-        elements.sellStrategies.addEventListener('change', updateSellStrategyGroups);
+        const checkboxes = elements.sellStrategies.querySelectorAll('input[type="checkbox"]');
+        checkboxes.forEach(checkbox => {
+            checkbox.addEventListener('change', updateSellStrategyGroups);
+        });
         updateSellStrategyGroups();
     }
 });
@@ -56,7 +61,10 @@ document.addEventListener('DOMContentLoaded', () => {
 function updateSellStrategyGroups() {
     if (!elements.sellStrategies) return;
     
-    const selectedStrategies = Array.from(elements.sellStrategies.selectedOptions).map(opt => opt.value);
+    const checkboxes = elements.sellStrategies.querySelectorAll('input[type="checkbox"]');
+    const selectedStrategies = Array.from(checkboxes)
+        .filter(cb => cb.checked)
+        .map(cb => cb.value);
     
     if (elements.stopLossGroup) {
         elements.stopLossGroup.classList.toggle('hidden', !selectedStrategies.includes('stop_loss'));
@@ -66,6 +74,9 @@ function updateSellStrategyGroups() {
     }
     if (elements.belowMa20Group) {
         elements.belowMa20Group.classList.toggle('hidden', !selectedStrategies.includes('below_ma20'));
+    }
+    if (elements.trailingStopLossGroup) {
+        elements.trailingStopLossGroup.classList.toggle('hidden', !selectedStrategies.includes('trailing_stop_loss'));
     }
 }
 
@@ -120,9 +131,11 @@ async function handleBacktest() {
     const initialAmount = parseFloat(elements.initialAmount.value);
     
     // 获取选中的卖出策略
-    const selectedStrategies = elements.sellStrategies ? 
-        Array.from(elements.sellStrategies.selectedOptions).map(opt => opt.value) : 
-        ['stop_loss', 'take_profit', 'below_ma20'];
+    let selectedStrategies = [];
+    if (elements.sellStrategies) {
+        const checkboxes = elements.sellStrategies.querySelectorAll('input[type="checkbox"]:checked');
+        selectedStrategies = Array.from(checkboxes).map(cb => cb.value);
+    }
     
     if (selectedStrategies.length === 0) {
         alert('请至少选择一种卖出策略');
@@ -133,6 +146,7 @@ async function handleBacktest() {
     let stopLossPercent = null;
     let takeProfitPercent = null;
     let belowMa20Days = null;
+    let trailingStopPercent = null;
     
     if (selectedStrategies.includes('stop_loss')) {
         stopLossPercent = parseFloat(elements.stopLossPercent.value);
@@ -158,6 +172,14 @@ async function handleBacktest() {
         belowMa20Days = belowMa20DaysValue ? parseInt(belowMa20DaysValue) : 3;
         if (isNaN(belowMa20Days) || belowMa20Days < 1 || belowMa20Days > 30) {
             alert('20均线下方天数必须在1-30之间');
+            return;
+        }
+    }
+    
+    if (selectedStrategies.includes('trailing_stop_loss')) {
+        trailingStopPercent = parseFloat(elements.trailingStopPercent.value);
+        if (isNaN(trailingStopPercent) || trailingStopPercent < 0 || trailingStopPercent > 50) {
+            alert('追踪止损比例必须在0-50之间');
             return;
         }
     }
@@ -200,6 +222,10 @@ async function handleBacktest() {
         
         if (selectedStrategies.includes('below_ma20') && belowMa20Days !== null) {
             requestBody.below_ma20_days = belowMa20Days;
+        }
+        
+        if (selectedStrategies.includes('trailing_stop_loss') && trailingStopPercent !== null) {
+            requestBody.trailing_stop_percent = trailingStopPercent;
         }
         
         if (buyThreshold !== null) {
