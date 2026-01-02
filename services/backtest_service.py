@@ -322,17 +322,21 @@ class BacktestService:
                     
                     # 重置所有策略状态并设置买入信息
                     for strategy in strategy_instances:
-                        strategy.reset()
-                        # 为需要买入信息的策略设置信息
-                        strategy_name = strategy.get_name()
-                        if strategy_name == 'below_ma20':
-                            strategy.set_buy_info(buy_date_idx, buy_below_ma20)
-                        elif strategy_name == 'trailing_stop_loss':
-                            strategy.set_buy_info(buy_price, buy_date_idx)
-                        elif strategy_name == 'stop_loss':
-                            strategy.set_buy_info(buy_date_idx)
-                        elif strategy_name == 'take_profit':
-                            strategy.set_buy_info(buy_date_idx)
+                        try:
+                            strategy.reset()
+                            # 为需要买入信息的策略设置信息
+                            strategy_name = strategy.get_name()
+                            if strategy_name == 'below_ma20':
+                                strategy.set_buy_info(buy_date_idx, buy_below_ma20)
+                            elif strategy_name == 'trailing_stop_loss':
+                                strategy.set_buy_info(buy_price, buy_date_idx)
+                            elif strategy_name == 'stop_loss':
+                                strategy.set_buy_info(buy_date_idx)
+                            elif strategy_name == 'take_profit':
+                                strategy.set_buy_info(buy_date_idx)
+                        except Exception as e:
+                            logger.warning(f'设置策略 {strategy_name} 买入信息时发生错误: {str(e)}', exc_info=True)
+                            # 继续执行，不中断回测流程
                     
                     buy_trades.append({
                         'date': pd.Timestamp(next_date).strftime('%Y-%m-%d'),
@@ -367,10 +371,15 @@ class BacktestService:
                         all_triggered = True
                         
                         for strategy in strategy_instances:
-                            sell, reason = strategy.should_sell(strategy_context)
-                            if sell:
-                                triggered_strategies.append(reason)
-                            else:
+                            try:
+                                sell, reason = strategy.should_sell(strategy_context)
+                                if sell:
+                                    triggered_strategies.append(reason)
+                                else:
+                                    all_triggered = False
+                            except Exception as e:
+                                logger.warning(f'策略 {strategy.get_name()} 判断卖出时发生错误: {str(e)}', exc_info=True)
+                                # 如果策略出错，在AND模式下视为未触发
                                 all_triggered = False
                         
                         if all_triggered and len(triggered_strategies) > 0:
@@ -379,11 +388,16 @@ class BacktestService:
                     else:
                         # OR关系（默认）：任一策略触发即卖出
                         for strategy in strategy_instances:
-                            sell, reason = strategy.should_sell(strategy_context)
-                            if sell:
-                                should_sell = True
-                                sell_reason = reason
-                                break  # 任一策略触发卖出即执行
+                            try:
+                                sell, reason = strategy.should_sell(strategy_context)
+                                if sell:
+                                    should_sell = True
+                                    sell_reason = reason
+                                    break  # 任一策略触发卖出即执行
+                            except Exception as e:
+                                logger.warning(f'策略 {strategy.get_name()} 判断卖出时发生错误: {str(e)}', exc_info=True)
+                                # 如果策略出错，在OR模式下继续检查其他策略
+                                continue
                     
                     # 执行卖出
                     if should_sell:
@@ -421,7 +435,11 @@ class BacktestService:
                         
                         # 重置所有策略状态
                         for strategy in strategy_instances:
-                            strategy.reset()
+                            try:
+                                strategy.reset()
+                            except Exception as e:
+                                logger.warning(f'重置策略 {strategy.get_name()} 状态时发生错误: {str(e)}', exc_info=True)
+                                # 继续执行，不中断回测流程
             
             # 如果最后还有持仓，按最后一天收盘价计算
             if position and len(result_df) > 0 and len(buy_trades) > 0:

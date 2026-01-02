@@ -58,6 +58,9 @@ class StopLossStrategy(SellStrategy):
         Args:
             stop_loss_percent: 止损比例（如5.0表示5%）
         """
+        if stop_loss_percent <= 0:
+            raise ValueError(f"止损比例必须大于0，当前值: {stop_loss_percent}")
+        
         self.stop_loss_percent = stop_loss_percent
         self.buy_date_idx = -1  # 买入日期索引
         self.last_check_idx = -1  # 上次检查的日线索引
@@ -82,19 +85,24 @@ class StopLossStrategy(SellStrategy):
         
         # 使用日线数据进行检查，从买入日期的下一天开始，到当前日期
         # 这样可以确保不会错过任何止损点
-        check_start_idx = max(buy_date_idx + 1, self.last_check_idx + 1)
+        # 确保 last_check_idx 有效，如果为 -1 则从买入日期下一天开始
+        check_start_idx = max(buy_date_idx + 1, self.last_check_idx + 1 if self.last_check_idx >= 0 else buy_date_idx + 1)
         check_end_idx = current_daily_idx
         
         # 确保检查范围有效
         if check_start_idx > check_end_idx:
             return False, ''
         
+        # 预先获取数组长度，避免重复计算
+        daily_df_len = len(daily_df)
+        daily_closes_len = len(daily_closes)
+        
         # 遍历从上次检查位置到当前日期的所有日线数据
         for check_idx in range(check_start_idx, check_end_idx + 1):
-            if check_idx >= len(daily_df):
+            if check_idx >= daily_df_len:
                 break
             
-            daily_close = daily_closes[check_idx] if check_idx < len(daily_closes) else None
+            daily_close = daily_closes[check_idx] if check_idx < daily_closes_len else None
             
             if pd.notna(daily_close) and daily_close > 0:
                 # 计算该日的盈亏比例
@@ -153,7 +161,8 @@ class TakeProfitStrategy(SellStrategy):
             return False, ''
         
         buy_price = context.get('buy_price', 0)
-        buy_date_idx = context.get('buy_date_idx', -1)
+        # 优先使用 context 中的 buy_date_idx，如果没有则使用实例变量
+        buy_date_idx = context.get('buy_date_idx', self.buy_date_idx)
         current_daily_idx = context.get('current_daily_idx', -1)
         
         if buy_price <= 0 or buy_date_idx < 0 or current_daily_idx < 0:
@@ -173,19 +182,24 @@ class TakeProfitStrategy(SellStrategy):
         
         # 使用日线数据进行检查，从买入日期的下一天开始，到当前日期
         # 这样可以确保不会错过任何止盈点
-        check_start_idx = max(buy_date_idx + 1, self.last_check_idx + 1)
+        # 确保 last_check_idx 有效，如果为 -1 则从买入日期下一天开始
+        check_start_idx = max(buy_date_idx + 1, self.last_check_idx + 1 if self.last_check_idx >= 0 else buy_date_idx + 1)
         check_end_idx = current_daily_idx
         
         # 确保检查范围有效
         if check_start_idx > check_end_idx:
             return False, ''
         
+        # 预先获取数组长度，避免重复计算
+        daily_df_len = len(daily_df)
+        daily_closes_len = len(daily_closes)
+        
         # 遍历从上次检查位置到当前日期的所有日线数据
         for check_idx in range(check_start_idx, check_end_idx + 1):
-            if check_idx >= len(daily_df):
+            if check_idx >= daily_df_len:
                 break
             
-            daily_close = daily_closes[check_idx] if check_idx < len(daily_closes) else None
+            daily_close = daily_closes[check_idx] if check_idx < daily_closes_len else None
             
             if pd.notna(daily_close) and daily_close > 0:
                 # 计算该日的盈亏比例
@@ -233,6 +247,12 @@ class BelowMa20Strategy(SellStrategy):
             below_ma20_days: 收盘价在20均线下方连续天数
             min_profit_percent: 最小收益阈值（%），只有收益达到此值以上才触发策略，None表示不设限制
         """
+        if below_ma20_days <= 0:
+            raise ValueError(f"below_ma20_days必须大于0，当前值: {below_ma20_days}")
+        
+        if min_profit_percent is not None and min_profit_percent <= 0:
+            raise ValueError(f"min_profit_percent必须大于0（如果提供），当前值: {min_profit_percent}")
+        
         self.below_ma20_days = below_ma20_days
         self.min_profit_percent = min_profit_percent  # 最小收益阈值
         self.buy_below_ma20 = False  # 买入时收盘价是否在20均线下方
@@ -251,7 +271,8 @@ class BelowMa20Strategy(SellStrategy):
         if not self.buy_below_ma20:
             return False, ''
         
-        buy_date_idx = context.get('buy_date_idx', -1)
+        # 优先使用 context 中的 buy_date_idx，如果没有则使用实例变量
+        buy_date_idx = context.get('buy_date_idx', self.buy_date_idx)
         current_daily_idx = context.get('current_daily_idx', -1)
         
         if buy_date_idx < 0 or current_daily_idx < 0:
@@ -272,8 +293,13 @@ class BelowMa20Strategy(SellStrategy):
             check_start_idx = buy_date_idx + 1  # 从买入日期的下一天开始检查
             check_end_idx = current_daily_idx
             
+            # 预先获取数组长度，避免重复计算
+            daily_df_len = len(daily_df)
+            daily_closes_len = len(daily_closes)
+            daily_ma20_len = len(daily_ma20)
+            
             for check_idx in range(check_start_idx, check_end_idx + 1):
-                if check_idx < 1 or check_idx >= len(daily_df):
+                if check_idx < 1 or check_idx >= daily_df_len:
                     continue
                 
                 # 获取当前和前一日的数据
@@ -282,10 +308,10 @@ class BelowMa20Strategy(SellStrategy):
                 if prev_idx < buy_date_idx:
                     continue
                 
-                prev_close = daily_closes[prev_idx] if prev_idx < len(daily_closes) else None
-                prev_ma20 = daily_ma20[prev_idx] if prev_idx < len(daily_ma20) else None
-                curr_close = daily_closes[check_idx] if check_idx < len(daily_closes) else None
-                curr_ma20 = daily_ma20[check_idx] if check_idx < len(daily_ma20) else None
+                prev_close = daily_closes[prev_idx] if prev_idx < daily_closes_len else None
+                prev_ma20 = daily_ma20[prev_idx] if prev_idx < daily_ma20_len else None
+                curr_close = daily_closes[check_idx] if check_idx < daily_closes_len else None
+                curr_ma20 = daily_ma20[check_idx] if check_idx < daily_ma20_len else None
                 
                 # 检查是否上穿：前一日收盘价 <= 20均线，当前收盘价 > 20均线
                 if (pd.notna(prev_ma20) and pd.notna(prev_close) and 
@@ -310,13 +336,18 @@ class BelowMa20Strategy(SellStrategy):
             if check_start_idx > check_end_idx:
                 return False, ''
             
+            # 预先获取数组长度，避免重复计算
+            daily_df_len = len(daily_df)
+            daily_closes_len = len(daily_closes)
+            daily_ma20_len = len(daily_ma20)
+            
             # 从上一次检查的位置之后开始，到当前日期，遍历所有日线数据
             for check_idx in range(check_start_idx, check_end_idx + 1):
-                if check_idx >= len(daily_df):
+                if check_idx >= daily_df_len:
                     break
                 
-                daily_close = daily_closes[check_idx] if check_idx < len(daily_closes) else None
-                daily_ma20_val = daily_ma20[check_idx] if check_idx < len(daily_ma20) else None
+                daily_close = daily_closes[check_idx] if check_idx < daily_closes_len else None
+                daily_ma20_val = daily_ma20[check_idx] if check_idx < daily_ma20_len else None
                 
                 # 注意：只使用表格中的MA.MA3值，如果值为NaN则跳过
                 if pd.notna(daily_ma20_val) and pd.notna(daily_close):
@@ -390,6 +421,9 @@ class TrailingStopLossStrategy(SellStrategy):
         Args:
             trailing_stop_percent: 追踪止损比例（如15.0表示15%）
         """
+        if trailing_stop_percent <= 0:
+            raise ValueError(f"追踪止损比例必须大于0，当前值: {trailing_stop_percent}")
+        
         self.trailing_stop_percent = trailing_stop_percent
         self.highest_price = 0.0  # 买入后的最高价
         self.stop_loss_price = 0.0  # 当前止损价
@@ -415,19 +449,24 @@ class TrailingStopLossStrategy(SellStrategy):
             return False, ''
         
         # 使用日线数据进行检查，从买入日期的下一天开始，到当前日期
-        check_start_idx = max(buy_date_idx + 1, self.last_check_idx + 1)
+        # 确保 last_check_idx 有效，如果为 -1 则从买入日期下一天开始
+        check_start_idx = max(buy_date_idx + 1, self.last_check_idx + 1 if self.last_check_idx >= 0 else buy_date_idx + 1)
         check_end_idx = current_daily_idx
         
         # 确保检查范围有效
         if check_start_idx > check_end_idx:
             return False, ''
         
+        # 预先获取数组长度，避免重复计算
+        daily_df_len = len(daily_df)
+        daily_closes_len = len(daily_closes)
+        
         # 遍历从上次检查位置到当前日期的所有日线数据
         for check_idx in range(check_start_idx, check_end_idx + 1):
-            if check_idx >= len(daily_df):
+            if check_idx >= daily_df_len:
                 break
             
-            daily_close = daily_closes[check_idx] if check_idx < len(daily_closes) else None
+            daily_close = daily_closes[check_idx] if check_idx < daily_closes_len else None
             
             if pd.notna(daily_close) and daily_close > 0:
                 # 更新最高价
@@ -466,8 +505,12 @@ class TrailingStopLossStrategy(SellStrategy):
             buy_price: 买入价格
             buy_date_idx: 买入日期索引（可选，用于日线数据检查）
         """
+        if buy_price <= 0:
+            raise ValueError(f"买入价格必须大于0，当前值: {buy_price}")
+        
         self.highest_price = buy_price
         self.buy_date_idx = buy_date_idx
+        self.last_check_idx = buy_date_idx if buy_date_idx >= 0 else -1
         # 初始止损价：买入价下方trailing_stop_percent%
         self.stop_loss_price = buy_price * (1 - self.trailing_stop_percent / 100)
 
