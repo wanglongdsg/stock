@@ -40,8 +40,9 @@ class BacktestService:
     
     @classmethod
     def calculate_backtest(cls, period: str, initial_amount: float, file_path: str = 'data/159915.xlsx',
-                          start_date: str = None, end_date: str = None, stop_loss_percent: float = 5.0,
-                          take_profit_percent: float = None, buy_threshold: float = 10.0, below_ma20_days: int = 3):
+                          start_date: str = None, end_date: str = None, stop_loss_percent: float = None,
+                          take_profit_percent: float = None, buy_threshold: float = 10.0, below_ma20_days: int = None,
+                          sell_strategies: list = None):
         """
         计算回测结果
         
@@ -252,17 +253,23 @@ class BacktestService:
                     # 计算当前盈亏比例
                     profit_percent = ((current_close - buy_price) / buy_price * 100) if buy_price > 0 else 0
                     
-                    # 卖出条件1：止盈检查（如果设置了止盈比例）
-                    if take_profit_percent is not None and profit_percent >= take_profit_percent:
+                    # 初始化卖出策略列表（如果未提供，默认全选）
+                    if sell_strategies is None:
+                        active_strategies = ['stop_loss', 'take_profit', 'below_ma20']
+                    else:
+                        active_strategies = sell_strategies
+                    
+                    # 卖出条件1：止盈检查（如果选中了止盈策略且设置了止盈比例）
+                    if 'take_profit' in active_strategies and take_profit_percent is not None and profit_percent >= take_profit_percent:
                         should_sell = True
                         sell_reason = f'止盈({profit_percent:.2f}%)'
                     
-                    # 卖出条件2：买入后上穿20均线，然后收盘价回落到20均线下方3天，第4天卖出
+                    # 卖出条件2：买入后上穿20均线，然后收盘价回落到20均线下方N天，第(N+1)天卖出
                     # 严格逻辑：
                     # 1. 只有买入时收盘价在20均线下方，才启用此策略
                     # 2. 必须先上穿20均线，然后才开始检查收盘价是否在20均线下方
                     # 注意：必须使用日线数据进行检查，而不是周期数据
-                    elif not should_sell and buy_below_ma20 and buy_date_idx >= 0 and current_daily_idx >= 0:
+                    if not should_sell and 'below_ma20' in active_strategies and below_ma20_days is not None and buy_below_ma20 and buy_date_idx >= 0 and current_daily_idx >= 0:
                         # 第一步：检查是否上穿20均线（从买入日期之后开始检查）
                         if not crossed_ma20:
                             # 遍历从买入日期之后到当前日期的所有日线数据，检查是否有上穿动作
@@ -331,8 +338,8 @@ class BacktestService:
                             if not should_sell:
                                 last_ma20_check_idx = check_end_idx
                     
-                    # 卖出条件3：止损检查
-                    elif not should_sell and profit_percent <= -stop_loss_percent:
+                    # 卖出条件3：止损检查（如果选中了止损策略）
+                    if not should_sell and 'stop_loss' in active_strategies and stop_loss_percent is not None and profit_percent <= -stop_loss_percent:
                         should_sell = True
                         sell_reason = f'止损({profit_percent:.2f}%)'
                     

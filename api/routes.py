@@ -187,42 +187,83 @@ def backtest():
                 'error_code': 'INVALID_AMOUNT'
             }), 400
         
-        # 获取止损比例
-        stop_loss_percent = data.get('stop_loss_percent', 5.0)
-        try:
-            stop_loss_percent = float(stop_loss_percent)
-            if stop_loss_percent < 0 or stop_loss_percent > 50:
-                return jsonify({
-                'success': False,
-                'error': 'stop_loss_percent 必须在0-50之间',
-                'error_code': 'INVALID_STOP_LOSS'
-            }), 400
-        except (ValueError, TypeError):
+        # 获取卖出策略列表（可选，默认全选）
+        sell_strategies = data.get('sell_strategies', ['stop_loss', 'take_profit', 'below_ma20'])
+        if not isinstance(sell_strategies, list):
+            sell_strategies = ['stop_loss', 'take_profit', 'below_ma20']  # 默认全选
+        
+        # 验证策略名称
+        valid_strategies = ['stop_loss', 'take_profit', 'below_ma20']
+        sell_strategies = [s for s in sell_strategies if s in valid_strategies]
+        
+        if len(sell_strategies) == 0:
             return jsonify({
                 'success': False,
-                'error': 'stop_loss_percent 必须是有效的数字',
-                'error_code': 'INVALID_STOP_LOSS'
+                'error': '至少需要选择一种卖出策略',
+                'error_code': 'NO_SELL_STRATEGY'
             }), 400
         
-        # 获取止盈比例（可选）
-        take_profit_percent = data.get('take_profit_percent')
-        if take_profit_percent is not None and take_profit_percent != '':
+        # 根据选中的策略获取参数
+        stop_loss_percent = None
+        take_profit_percent = None
+        below_ma20_days = None
+        
+        # 获取止损比例（如果选中了止损策略）
+        if 'stop_loss' in sell_strategies:
+            stop_loss_percent = data.get('stop_loss_percent', 5.0)
             try:
-                take_profit_percent = float(take_profit_percent)
-                if take_profit_percent < 0 or take_profit_percent > 200:
+                stop_loss_percent = float(stop_loss_percent)
+                if stop_loss_percent < 0 or stop_loss_percent > 50:
                     return jsonify({
                         'success': False,
-                        'error': 'take_profit_percent 必须在0-200之间',
-                        'error_code': 'INVALID_TAKE_PROFIT'
+                        'error': 'stop_loss_percent 必须在0-50之间',
+                        'error_code': 'INVALID_STOP_LOSS'
                     }), 400
             except (ValueError, TypeError):
                 return jsonify({
                     'success': False,
-                    'error': 'take_profit_percent 必须是有效的数字',
-                    'error_code': 'INVALID_TAKE_PROFIT'
+                    'error': 'stop_loss_percent 必须是有效的数字',
+                    'error_code': 'INVALID_STOP_LOSS'
                 }), 400
-        else:
-            take_profit_percent = None
+        
+        # 获取止盈比例（如果选中了止盈策略）
+        if 'take_profit' in sell_strategies:
+            take_profit_percent = data.get('take_profit_percent')
+            if take_profit_percent is not None and take_profit_percent != '':
+                try:
+                    take_profit_percent = float(take_profit_percent)
+                    if take_profit_percent < 0 or take_profit_percent > 200:
+                        return jsonify({
+                            'success': False,
+                            'error': 'take_profit_percent 必须在0-200之间',
+                            'error_code': 'INVALID_TAKE_PROFIT'
+                        }), 400
+                except (ValueError, TypeError):
+                    return jsonify({
+                        'success': False,
+                        'error': 'take_profit_percent 必须是有效的数字',
+                        'error_code': 'INVALID_TAKE_PROFIT'
+                    }), 400
+            else:
+                take_profit_percent = None
+        
+        # 获取收盘价在20均线下方天数（如果选中了20均线策略）
+        if 'below_ma20' in sell_strategies:
+            below_ma20_days = data.get('below_ma20_days', 3)
+            try:
+                below_ma20_days = int(below_ma20_days)
+                if below_ma20_days < 1 or below_ma20_days > 30:
+                    return jsonify({
+                        'success': False,
+                        'error': 'below_ma20_days 必须在1-30之间',
+                        'error_code': 'INVALID_BELOW_MA20_DAYS'
+                    }), 400
+            except (ValueError, TypeError):
+                return jsonify({
+                    'success': False,
+                    'error': 'below_ma20_days 必须是有效的整数',
+                    'error_code': 'INVALID_BELOW_MA20_DAYS'
+                }), 400
         
         # 获取买入信号阈值（可选，默认10）
         buy_threshold = data.get('buy_threshold')
@@ -244,26 +285,6 @@ def backtest():
         else:
             buy_threshold = 10.0  # 默认值
         
-        # 获取收盘价在20均线下方天数（可选，默认3天）
-        below_ma20_days = data.get('below_ma20_days')
-        if below_ma20_days is not None and below_ma20_days != '':
-            try:
-                below_ma20_days = int(below_ma20_days)
-                if below_ma20_days < 1 or below_ma20_days > 30:
-                    return jsonify({
-                        'success': False,
-                        'error': 'below_ma20_days 必须在1-30之间',
-                        'error_code': 'INVALID_BELOW_MA20_DAYS'
-                    }), 400
-            except (ValueError, TypeError):
-                return jsonify({
-                    'success': False,
-                    'error': 'below_ma20_days 必须是有效的整数',
-                    'error_code': 'INVALID_BELOW_MA20_DAYS'
-                }), 400
-        else:
-            below_ma20_days = 3  # 默认值
-        
         # 获取股票代码
         stock_code = data.get('stock_code', '159915').strip()
         if not stock_code:
@@ -279,7 +300,11 @@ def backtest():
         end_date = data.get('end_date')
         
         # 计算回测结果
-        result = BacktestService.calculate_backtest(period, initial_amount, file_path, start_date, end_date, stop_loss_percent, take_profit_percent, buy_threshold, below_ma20_days)
+        result = BacktestService.calculate_backtest(
+            period, initial_amount, file_path, start_date, end_date, 
+            stop_loss_percent, take_profit_percent, buy_threshold, 
+            below_ma20_days, sell_strategies
+        )
         
         # 如果计算失败，返回错误
         if not result.get('success', False):

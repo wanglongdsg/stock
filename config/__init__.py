@@ -33,3 +33,4 @@ __all__ = [
     'COLOR_RISE',
     'COLOR_FALL'
 ]
+
