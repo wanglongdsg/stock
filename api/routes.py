@@ -287,7 +287,7 @@ def backtest():
         
         # 获取追踪止损比例（如果选中了追踪止损策略）
         if 'trailing_stop_loss' in sell_strategies:
-            trailing_stop_percent = data.get('trailing_stop_percent', 15.0)
+            trailing_stop_percent = data.get('trailing_stop_percent', 5.0)
             try:
                 trailing_stop_percent = float(trailing_stop_percent)
                 if trailing_stop_percent < 0 or trailing_stop_percent > 50:

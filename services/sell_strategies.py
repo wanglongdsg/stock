@@ -410,7 +410,7 @@ class BelowMa20Strategy(SellStrategy):
 
 
 class TrailingStopLossStrategy(SellStrategy):
-    """追踪止损策略：初始止损点设置为买入价格下方一定幅度（如15-20%），
+    """追踪止损策略：初始止损点设置为买入价格下方一定幅度（如5-20%），
     随着股价上升，止损点也随之上移，始终保持在最新高点下方相同幅度
     注意：使用日线数据进行检查，确保不会错过止损点"""
     
@@ -419,7 +419,7 @@ class TrailingStopLossStrategy(SellStrategy):
         初始化追踪止损策略
         
         Args:
-            trailing_stop_percent: 追踪止损比例（如15.0表示15%）
+            trailing_stop_percent: 追踪止损比例（如5.0表示5%）
         """
         if trailing_stop_percent <= 0:
             raise ValueError(f"追踪止损比例必须大于0，当前值: {trailing_stop_percent}")
@@ -530,7 +530,7 @@ def create_strategy(strategy_name: str, **kwargs) -> Optional[SellStrategy]:
         'stop_loss': lambda: StopLossStrategy(kwargs.get('stop_loss_percent', 5.0)),
         'take_profit': lambda: TakeProfitStrategy(kwargs.get('take_profit_percent')),
         'below_ma20': lambda: BelowMa20Strategy(kwargs.get('below_ma20_days', 3), kwargs.get('below_ma20_min_profit', None)),
-        'trailing_stop_loss': lambda: TrailingStopLossStrategy(kwargs.get('trailing_stop_percent', 15.0))
+        'trailing_stop_loss': lambda: TrailingStopLossStrategy(kwargs.get('trailing_stop_percent', 5.0))
     }
     
     strategy_factory = strategies.get(strategy_name)
