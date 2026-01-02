@@ -249,6 +249,7 @@ def backtest():
                 take_profit_percent = None
         
         # 获取收盘价在20均线下方天数（如果选中了20均线策略）
+        below_ma20_min_profit = None
         if 'below_ma20' in sell_strategies:
             below_ma20_days = data.get('below_ma20_days', 3)
             try:
@@ -265,6 +266,24 @@ def backtest():
                     'error': 'below_ma20_days 必须是有效的整数',
                     'error_code': 'INVALID_BELOW_MA20_DAYS'
                 }), 400
+            
+            # 获取20均线策略的最小收益阈值（可选）
+            below_ma20_min_profit_value = data.get('below_ma20_min_profit')
+            if below_ma20_min_profit_value is not None and below_ma20_min_profit_value != '':
+                try:
+                    below_ma20_min_profit = float(below_ma20_min_profit_value)
+                    if below_ma20_min_profit < 0 or below_ma20_min_profit > 200:
+                        return jsonify({
+                            'success': False,
+                            'error': 'below_ma20_min_profit 必须在0-200之间',
+                            'error_code': 'INVALID_BELOW_MA20_MIN_PROFIT'
+                        }), 400
+                except (ValueError, TypeError):
+                    return jsonify({
+                        'success': False,
+                        'error': 'below_ma20_min_profit 必须是有效的数字',
+                        'error_code': 'INVALID_BELOW_MA20_MIN_PROFIT'
+                    }), 400
         
         # 获取追踪止损比例（如果选中了追踪止损策略）
         if 'trailing_stop_loss' in sell_strategies:
@@ -327,7 +346,8 @@ def backtest():
         result = BacktestService.calculate_backtest(
             period, initial_amount, file_path, start_date, end_date, 
             stop_loss_percent, take_profit_percent, buy_threshold, 
-            below_ma20_days, sell_strategies, trailing_stop_percent, strategy_relation
+            below_ma20_days, sell_strategies, trailing_stop_percent, strategy_relation,
+            below_ma20_min_profit
         )
         
         # 如果计算失败，返回错误

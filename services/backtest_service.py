@@ -44,7 +44,8 @@ class BacktestService:
     def calculate_backtest(cls, period: str, initial_amount: float, file_path: str = 'data/159915.xlsx',
                           start_date: str = None, end_date: str = None, stop_loss_percent: float = None,
                           take_profit_percent: float = None, buy_threshold: float = 10.0, below_ma20_days: int = None,
-                          sell_strategies: list = None, trailing_stop_percent: float = None, strategy_relation: str = 'OR'):
+                          sell_strategies: list = None, trailing_stop_percent: float = None, strategy_relation: str = 'OR',
+                          below_ma20_min_profit: float = None):
         """
         计算回测结果
         
@@ -161,6 +162,7 @@ class BacktestService:
                 'stop_loss_percent': stop_loss_percent,
                 'take_profit_percent': take_profit_percent,
                 'below_ma20_days': below_ma20_days,
+                'below_ma20_min_profit': below_ma20_min_profit,
                 'trailing_stop_percent': trailing_stop_percent
             }
             
@@ -256,14 +258,19 @@ class BacktestService:
                     
                     last_checked_daily_idx = current_daily_idx if current_daily_idx >= 0 else -1
                     
-                    # 重置所有策略状态
+                    # 重置所有策略状态并设置买入信息
                     for strategy in strategy_instances:
                         strategy.reset()
                         # 为需要买入信息的策略设置信息
-                        if strategy.get_name() == 'below_ma20':
+                        strategy_name = strategy.get_name()
+                        if strategy_name == 'below_ma20':
                             strategy.set_buy_info(buy_date_idx, buy_below_ma20)
-                        elif strategy.get_name() == 'trailing_stop_loss':
-                            strategy.set_buy_info(buy_price)
+                        elif strategy_name == 'trailing_stop_loss':
+                            strategy.set_buy_info(buy_price, buy_date_idx)
+                        elif strategy_name == 'stop_loss':
+                            strategy.set_buy_info(buy_date_idx)
+                        elif strategy_name == 'take_profit':
+                            strategy.set_buy_info(buy_date_idx)
                     
                     buy_trades.append({
                         'date': pd.Timestamp(next_date).strftime('%Y-%m-%d'),

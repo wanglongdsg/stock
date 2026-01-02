@@ -18,10 +18,12 @@ const elements = {
     stopLossPercent: document.getElementById('stopLossPercent'),
     takeProfitPercent: document.getElementById('takeProfitPercent'),
     belowMa20Days: document.getElementById('belowMa20Days'),
+    belowMa20MinProfit: document.getElementById('belowMa20MinProfit'),
     trailingStopPercent: document.getElementById('trailingStopPercent'),
     stopLossGroup: document.getElementById('stopLossGroup'),
     takeProfitGroup: document.getElementById('takeProfitGroup'),
     belowMa20Group: document.getElementById('belowMa20Group'),
+    belowMa20MinProfitGroup: document.getElementById('belowMa20MinProfitGroup'),
     trailingStopLossGroup: document.getElementById('trailingStopLossGroup'),
     themeSwitcher: document.getElementById('themeSwitcher'),
     loading: document.getElementById('loading'),
@@ -75,6 +77,9 @@ function updateSellStrategyGroups() {
     }
     if (elements.belowMa20Group) {
         elements.belowMa20Group.classList.toggle('hidden', !selectedStrategies.includes('below_ma20'));
+    }
+    if (elements.belowMa20MinProfitGroup) {
+        elements.belowMa20MinProfitGroup.classList.toggle('hidden', !selectedStrategies.includes('below_ma20'));
     }
     if (elements.trailingStopLossGroup) {
         elements.trailingStopLossGroup.classList.toggle('hidden', !selectedStrategies.includes('trailing_stop_loss'));
@@ -177,6 +182,18 @@ async function handleBacktest() {
         }
     }
     
+    let belowMa20MinProfit = null;
+    if (selectedStrategies.includes('below_ma20')) {
+        const belowMa20MinProfitValue = elements.belowMa20MinProfit.value.trim();
+        if (belowMa20MinProfitValue) {
+            belowMa20MinProfit = parseFloat(belowMa20MinProfitValue);
+            if (isNaN(belowMa20MinProfit) || belowMa20MinProfit < 0 || belowMa20MinProfit > 200) {
+                alert('20均线策略最小收益阈值必须在0-200之间');
+                return;
+            }
+        }
+    }
+    
     if (selectedStrategies.includes('trailing_stop_loss')) {
         trailingStopPercent = parseFloat(elements.trailingStopPercent.value);
         if (isNaN(trailingStopPercent) || trailingStopPercent < 0 || trailingStopPercent > 50) {
@@ -228,6 +245,10 @@ async function handleBacktest() {
         
         if (selectedStrategies.includes('below_ma20') && belowMa20Days !== null) {
             requestBody.below_ma20_days = belowMa20Days;
+        }
+        
+        if (selectedStrategies.includes('below_ma20') && belowMa20MinProfit !== null) {
+            requestBody.below_ma20_min_profit = belowMa20MinProfit;
         }
         
         if (selectedStrategies.includes('trailing_stop_loss') && trailingStopPercent !== null) {

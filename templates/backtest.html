@@ -95,7 +95,7 @@
                         </label>
                         <label class="strategy-checkbox">
                             <input type="checkbox" name="sellStrategy" value="below_ma20">
-                            <span>20均线下方策略</span>
+                            <span>20均线下方策略（10%收益后触发）</span>
                         </label>
                         <label class="strategy-checkbox">
                             <input type="checkbox" name="sellStrategy" value="trailing_stop_loss">
@@ -144,6 +144,14 @@
                         </label>
                         <input type="number" id="belowMa20Days" class="form-control" value="3" min="1" max="30" step="1">
                         <small class="form-hint">收盘价在20均线下方连续此天数后卖出，建议范围：2-5天</small>
+                    </div>
+                    <div class="form-group" id="belowMa20MinProfitGroup">
+                        <label for="belowMa20MinProfit">
+                            <span class="label-icon">📈</span>
+                            20均线策略最小收益阈值（%）
+                        </label>
+                        <input type="number" id="belowMa20MinProfit" class="form-control" value="10" min="0" max="200" step="0.1" placeholder="留空则不设限制">
+                        <small class="form-hint">只有收益达到此值以上才触发20均线下方策略，留空表示不设限制，建议：10%</small>
                     </div>
                     <div class="form-group" id="trailingStopLossGroup">
                         <label for="trailingStopPercent">

@@ -48,7 +48,8 @@ class SellStrategy(ABC):
 
 
 class StopLossStrategy(SellStrategy):
-    """止损策略：当亏损达到指定比例时卖出"""
+    """止损策略：当亏损达到指定比例时卖出
+    注意：使用日线数据进行检查，确保不会错过止损点"""
     
     def __init__(self, stop_loss_percent: float):
         """
@@ -58,21 +59,54 @@ class StopLossStrategy(SellStrategy):
             stop_loss_percent: 止损比例（如5.0表示5%）
         """
         self.stop_loss_percent = stop_loss_percent
+        self.buy_date_idx = -1  # 买入日期索引
+        self.last_check_idx = -1  # 上次检查的日线索引
     
     def should_sell(self, context: Dict[str, Any]) -> Tuple[bool, str]:
         if not context.get('position', False):
             return False, ''
         
         buy_price = context.get('buy_price', 0)
-        current_close = context.get('current_close', 0)
+        buy_date_idx = context.get('buy_date_idx', -1)
+        current_daily_idx = context.get('current_daily_idx', -1)
         
-        if buy_price <= 0:
+        if buy_price <= 0 or buy_date_idx < 0 or current_daily_idx < 0:
             return False, ''
         
-        profit_percent = ((current_close - buy_price) / buy_price * 100)
+        daily_df = context.get('daily_df')
+        daily_closes = context.get('daily_closes')
         
-        if profit_percent <= -self.stop_loss_percent:
-            return True, f'止损({profit_percent:.2f}%)'
+        if daily_df is None or daily_closes is None:
+            return False, ''
+        
+        # 使用日线数据进行检查，从买入日期的下一天开始，到当前日期
+        # 这样可以确保不会错过任何止损点
+        check_start_idx = max(buy_date_idx + 1, self.last_check_idx + 1)
+        check_end_idx = current_daily_idx
+        
+        # 确保检查范围有效
+        if check_start_idx > check_end_idx:
+            return False, ''
+        
+        # 遍历从上次检查位置到当前日期的所有日线数据
+        for check_idx in range(check_start_idx, check_end_idx + 1):
+            if check_idx >= len(daily_df):
+                break
+            
+            daily_close = daily_closes[check_idx] if check_idx < len(daily_closes) else None
+            
+            if pd.notna(daily_close) and daily_close > 0:
+                # 计算该日的盈亏比例
+                profit_percent = ((daily_close - buy_price) / buy_price * 100)
+                
+                # 如果亏损达到止损比例，立即卖出
+                if profit_percent <= -self.stop_loss_percent:
+                    self.last_check_idx = check_idx
+                    return True, f'止损({profit_percent:.2f}%)'
+        
+        # 更新最后检查的索引
+        if check_end_idx >= 0:
+            self.last_check_idx = check_end_idx
         
         return False, ''
     
@@ -80,7 +114,19 @@ class StopLossStrategy(SellStrategy):
         return 'stop_loss'
     
     def reset(self):
-        pass
+        """重置策略状态"""
+        self.buy_date_idx = -1
+        self.last_check_idx = -1
+    
+    def set_buy_info(self, buy_date_idx: int):
+        """
+        设置买入信息
+        
+        Args:
+            buy_date_idx: 买入日期索引
+        """
+        self.buy_date_idx = buy_date_idx
+        self.last_check_idx = buy_date_idx
 
 
 class TakeProfitStrategy(SellStrategy):
@@ -123,16 +169,19 @@ class TakeProfitStrategy(SellStrategy):
 
 
 class BelowMa20Strategy(SellStrategy):
-    """20均线下方策略：买入后上穿20均线，然后收盘价回落到20均线下方N天，第(N+1)天卖出"""
+    """20均线下方策略：买入后上穿20均线，然后收盘价回落到20均线下方N天，第(N+1)天卖出
+    新增：只有在收益达到指定阈值（如10%）以上时才触发此策略"""
     
-    def __init__(self, below_ma20_days: int):
+    def __init__(self, below_ma20_days: int, min_profit_percent: Optional[float] = None):
         """
         初始化20均线下方策略
         
         Args:
             below_ma20_days: 收盘价在20均线下方连续天数
+            min_profit_percent: 最小收益阈值（%），只有收益达到此值以上才触发策略，None表示不设限制
         """
         self.below_ma20_days = below_ma20_days
+        self.min_profit_percent = min_profit_percent  # 最小收益阈值
         self.buy_below_ma20 = False  # 买入时收盘价是否在20均线下方
         self.crossed_ma20 = False  # 是否已上穿20日线
         self.crossed_ma20_date_idx = -1  # 上穿20均线的日期索引
@@ -196,6 +245,16 @@ class BelowMa20Strategy(SellStrategy):
         
         # 第二步：如果已上穿20均线，检查收盘价是否在20均线下方
         if self.crossed_ma20 and self.crossed_ma20_date_idx >= 0:
+            buy_price = context.get('buy_price', 0)
+            current_close = context.get('current_close', 0)
+            
+            # 如果设置了最小收益阈值，先检查当前收益是否达到阈值
+            if self.min_profit_percent is not None and buy_price > 0:
+                profit_percent = ((current_close - buy_price) / buy_price * 100)
+                # 如果收益未达到阈值，不触发卖出策略
+                if profit_percent < self.min_profit_percent:
+                    return False, ''
+            
             # 从上穿日期的下一天开始，到当前日期，检查所有日线数据
             # 使用last_ma20_check_idx来避免重复检查，从上一次检查的位置之后开始
             check_start_idx = max(self.crossed_ma20_date_idx + 1, self.last_ma20_check_idx + 1)
@@ -215,6 +274,14 @@ class BelowMa20Strategy(SellStrategy):
                 
                 # 注意：只使用表格中的MA.MA3值，如果值为NaN则跳过
                 if pd.notna(daily_ma20_val) and pd.notna(daily_close):
+                    # 如果设置了最小收益阈值，检查该日收益是否达到阈值
+                    if self.min_profit_percent is not None and buy_price > 0:
+                        daily_profit_percent = ((daily_close - buy_price) / buy_price * 100)
+                        # 如果收益未达到阈值，重置计数并跳过（因为策略要求收益达到阈值后才开始检查）
+                        if daily_profit_percent < self.min_profit_percent:
+                            self.close_below_ma20_days = 0  # 重置计数
+                            continue
+                    
                     if daily_close < daily_ma20_val:
                         # 收盘价在20均线下方，累加计数
                         self.close_below_ma20_days += 1
@@ -222,7 +289,10 @@ class BelowMa20Strategy(SellStrategy):
                         # 如果连续below_ma20_days天在20均线下方，第(below_ma20_days+1)天卖出
                         if self.close_below_ma20_days >= self.below_ma20_days:
                             self.last_ma20_check_idx = check_idx  # 更新检查索引
-                            return True, f'收盘价在20均线下方{self.below_ma20_days}天，第{self.below_ma20_days+1}天卖出'
+                            # 计算最终收益用于显示
+                            final_profit_percent = ((daily_close - buy_price) / buy_price * 100) if buy_price > 0 else 0
+                            profit_info = f'（收益{final_profit_percent:.2f}%）' if self.min_profit_percent is not None else ''
+                            return True, f'收盘价在20均线下方{self.below_ma20_days}天{profit_info}，第{self.below_ma20_days+1}天卖出'
                     else:
                         # 如果收盘价回到20均线上方，重置计数
                         self.close_below_ma20_days = 0
@@ -258,7 +328,8 @@ class BelowMa20Strategy(SellStrategy):
 
 class TrailingStopLossStrategy(SellStrategy):
     """追踪止损策略：初始止损点设置为买入价格下方一定幅度（如15-20%），
-    随着股价上升，止损点也随之上移，始终保持在最新高点下方相同幅度"""
+    随着股价上升，止损点也随之上移，始终保持在最新高点下方相同幅度
+    注意：使用日线数据进行检查，确保不会错过止损点"""
     
     def __init__(self, trailing_stop_percent: float):
         """
@@ -270,27 +341,57 @@ class TrailingStopLossStrategy(SellStrategy):
         self.trailing_stop_percent = trailing_stop_percent
         self.highest_price = 0.0  # 买入后的最高价
         self.stop_loss_price = 0.0  # 当前止损价
+        self.buy_date_idx = -1  # 买入日期索引
+        self.last_check_idx = -1  # 上次检查的日线索引
     
     def should_sell(self, context: Dict[str, Any]) -> Tuple[bool, str]:
         if not context.get('position', False):
             return False, ''
         
         buy_price = context.get('buy_price', 0)
-        current_close = context.get('current_close', 0)
+        buy_date_idx = context.get('buy_date_idx', -1)
+        current_daily_idx = context.get('current_daily_idx', -1)
         
-        if buy_price <= 0:
+        if buy_price <= 0 or buy_date_idx < 0 or current_daily_idx < 0:
             return False, ''
         
-        # 更新最高价
-        if current_close > self.highest_price:
-            self.highest_price = current_close
-            # 计算新的止损价：最高价下方trailing_stop_percent%
-            self.stop_loss_price = self.highest_price * (1 - self.trailing_stop_percent / 100)
+        daily_df = context.get('daily_df')
+        daily_closes = context.get('daily_closes')
         
-        # 如果当前收盘价跌破止损价，则卖出
-        if current_close < self.stop_loss_price:
-            profit_percent = ((current_close - buy_price) / buy_price * 100)
-            return True, f'追踪止损({profit_percent:.2f}%)'
+        if daily_df is None or daily_closes is None:
+            return False, ''
+        
+        # 使用日线数据进行检查，从买入日期的下一天开始，到当前日期
+        check_start_idx = max(buy_date_idx + 1, self.last_check_idx + 1)
+        check_end_idx = current_daily_idx
+        
+        # 确保检查范围有效
+        if check_start_idx > check_end_idx:
+            return False, ''
+        
+        # 遍历从上次检查位置到当前日期的所有日线数据
+        for check_idx in range(check_start_idx, check_end_idx + 1):
+            if check_idx >= len(daily_df):
+                break
+            
+            daily_close = daily_closes[check_idx] if check_idx < len(daily_closes) else None
+            
+            if pd.notna(daily_close) and daily_close > 0:
+                # 更新最高价
+                if daily_close > self.highest_price:
+                    self.highest_price = daily_close
+                    # 计算新的止损价：最高价下方trailing_stop_percent%
+                    self.stop_loss_price = self.highest_price * (1 - self.trailing_stop_percent / 100)
+                
+                # 如果当前收盘价跌破止损价，则卖出
+                if daily_close < self.stop_loss_price:
+                    profit_percent = ((daily_close - buy_price) / buy_price * 100)
+                    self.last_check_idx = check_idx
+                    return True, f'追踪止损({profit_percent:.2f}%)'
+        
+        # 更新最后检查的索引
+        if check_end_idx >= 0:
+            self.last_check_idx = check_end_idx
         
         return False, ''
     
@@ -301,6 +402,8 @@ class TrailingStopLossStrategy(SellStrategy):
         """重置策略状态"""
         self.highest_price = 0.0
         self.stop_loss_price = 0.0
+        self.buy_date_idx = -1
+        self.last_check_idx = -1
     
     def set_buy_info(self, buy_price: float):
         """
@@ -328,7 +431,7 @@ def create_strategy(strategy_name: str, **kwargs) -> Optional[SellStrategy]:
     strategies = {
         'stop_loss': lambda: StopLossStrategy(kwargs.get('stop_loss_percent', 5.0)),
         'take_profit': lambda: TakeProfitStrategy(kwargs.get('take_profit_percent')),
-        'below_ma20': lambda: BelowMa20Strategy(kwargs.get('below_ma20_days', 3)),
+        'below_ma20': lambda: BelowMa20Strategy(kwargs.get('below_ma20_days', 3), kwargs.get('below_ma20_min_profit', None)),
         'trailing_stop_loss': lambda: TrailingStopLossStrategy(kwargs.get('trailing_stop_percent', 15.0))
     }
     
