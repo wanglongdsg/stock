@@ -132,11 +132,40 @@ class BacktestService:
                     'error_code': 'NO_DAILY_DATA'
                 }
             
+            # 数据验证：确保必要的列存在
+            required_columns = ['open', 'high', 'low', 'close']
+            missing_columns = [col for col in required_columns if col not in df.columns]
+            if missing_columns:
+                return {
+                    'success': False,
+                    'error': f'数据文件缺少必需的列: {", ".join(missing_columns)}',
+                    'error_code': 'MISSING_COLUMNS'
+                }
+            
+            # 数据验证：确保价格数据有效
+            price_columns = ['open', 'high', 'low', 'close']
+            for col in price_columns:
+                if df[col].isna().all():
+                    return {
+                        'success': False,
+                        'error': f'列 {col} 的数据全部为NaN，无法进行回测',
+                        'error_code': 'INVALID_PRICE_DATA'
+                    }
+            
             # 创建指标计算器
             indicator = StockIndicator(n=5)
             
             # 计算所有指标
-            result_df = indicator.calculate_all(df.copy(), buy_threshold=buy_threshold)
+            try:
+                result_df = indicator.calculate_all(df.copy(), buy_threshold=buy_threshold)
+            except ValueError as e:
+                # 处理指标计算中的值错误
+                logger.error(f'指标计算时发生值错误: {str(e)}', exc_info=True)
+                return {
+                    'success': False,
+                    'error': f'指标计算失败: {str(e)}',
+                    'error_code': 'INDICATOR_CALCULATION_ERROR'
+                }
             
             # 确保数据按日期排序
             result_df = result_df.sort_values('date').reset_index(drop=True)
@@ -230,22 +259,55 @@ class BacktestService:
                     current_ma20_val = daily_ma20[current_daily_idx]
                     last_checked_daily_idx = current_daily_idx
                 
-                # 买入信号：CROSS(趋势线,10) - 趋势线从下向上穿越10
+                # 买入信号：CROSS(趋势线,buy_threshold) - 趋势线从下向上穿越buy_threshold
                 if current_buy_signal == 1 and not position:
+                    # 验证下一天的开盘价是否有效
+                    if pd.isna(next_open) or next_open <= 0:
+                        # 如果下一天开盘价无效，跳过此次买入信号
+                        logger.warning(f'日期 {current_date} 的买入信号被跳过：下一天开盘价无效 (next_open={next_open})')
+                        continue
+                    
+                    # 验证现金是否足够（虽然全仓买入，但需要确保有现金）
+                    if cash <= 0:
+                        logger.warning(f'日期 {current_date} 的买入信号被跳过：现金不足 (cash={cash})')
+                        continue
+                    
                     # 第二天开盘价买入
-                    buy_price = next_open
+                    buy_price = float(next_open)
                     buy_amount = cash  # 使用当前现金全仓买入
-                    shares = buy_amount / buy_price  # 全仓买入
+                    
+                    # 计算买入股数，确保不会因为价格问题导致除零或负数
+                    if buy_price > 0:
+                        shares = buy_amount / buy_price
+                    else:
+                        logger.error(f'日期 {current_date} 的买入信号被跳过：买入价格无效 (buy_price={buy_price})')
+                        continue
+                    
+                    # 验证买入股数是否有效
+                    if shares <= 0 or pd.isna(shares):
+                        logger.error(f'日期 {current_date} 的买入信号被跳过：买入股数无效 (shares={shares})')
+                        continue
+                    
                     cash = 0
                     position = True
                     
                     # 买入日期索引（用于后续20日均线检查）
+                    buy_date_idx = -1
                     if period.upper() == 'D':
                         buy_date_idx = daily_date_to_idx.get(next_date, -1)
                     else:
                         # 周线/月线：找到对应的日线索引
+                        # 使用numpy的searchsorted加速查找
                         insert_pos = np.searchsorted(daily_dates, next_date, side='right')
-                        buy_date_idx = insert_pos - 1 if insert_pos > 0 else -1
+                        if insert_pos > 0:
+                            buy_date_idx = insert_pos - 1
+                        else:
+                            # 如果找不到，尝试查找最接近的日期（向前查找）
+                            buy_date_idx = -1
+                    
+                    # 如果找不到买入日期索引，记录警告但继续执行
+                    if buy_date_idx < 0:
+                        logger.warning(f'无法找到买入日期 {next_date} 对应的日线索引，20均线策略可能无法正常工作')
                     
                     # 检查买入时收盘价是否在20均线下方（只有这种情况才触发上穿策略）
                     buy_below_ma20 = False
@@ -325,8 +387,18 @@ class BacktestService:
                     
                     # 执行卖出
                     if should_sell:
+                        # 验证下一天的开盘价是否有效
+                        if pd.isna(next_open) or next_open <= 0:
+                            logger.warning(f'日期 {current_date} 的卖出信号被跳过：下一天开盘价无效 (next_open={next_open})')
+                            continue
+                        
+                        # 验证持仓数量是否有效
+                        if shares <= 0 or pd.isna(shares):
+                            logger.warning(f'日期 {current_date} 的卖出信号被跳过：持仓数量无效 (shares={shares})')
+                            continue
+                        
                         # 第二天开盘价卖出
-                        sell_price = next_open
+                        sell_price = float(next_open)
                         cash = shares * sell_price  # 全仓卖出
                         buy_amount = buy_trades[-1]['amount'] if buy_trades else initial_amount
                         profit = cash - buy_amount
@@ -354,10 +426,23 @@ class BacktestService:
             # 如果最后还有持仓，按最后一天收盘价计算
             if position and len(result_df) > 0 and len(buy_trades) > 0:
                 last_price = result_df.iloc[-1]['close']
-                cash = shares * last_price
-                buy_amount = buy_trades[-1]['amount']
-                profit = cash - buy_amount
-                profit_rate = (profit / buy_amount) * 100 if buy_amount > 0 else 0
+                
+                # 验证最后一天收盘价是否有效
+                if pd.isna(last_price) or last_price <= 0:
+                    logger.warning(f'最后一天收盘价无效 (last_price={last_price})，使用买入价格计算')
+                    last_price = buy_price if buy_price > 0 else buy_trades[-1]['price']
+                
+                # 验证持仓数量是否有效
+                if shares > 0 and not pd.isna(shares):
+                    cash = shares * float(last_price)
+                    buy_amount = buy_trades[-1]['amount']
+                    profit = cash - buy_amount
+                    profit_rate = (profit / buy_amount) * 100 if buy_amount > 0 else 0
+                else:
+                    logger.warning(f'最后持仓数量无效 (shares={shares})，跳过最终结算')
+                    cash = 0
+                    profit = 0
+                    profit_rate = 0
                 sell_trades.append({
                     'date': result_df.iloc[-1]['date'].strftime('%Y-%m-%d'),
                     'price': format_decimal(last_price),

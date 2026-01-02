@@ -140,11 +140,48 @@ class IndicatorService:
                     'error_code': 'NO_DATA_IN_RANGE'
                 }
             
+            # 数据验证：确保必要的列存在
+            required_columns = ['open', 'high', 'low', 'close']
+            missing_columns = [col for col in required_columns if col not in df.columns]
+            if missing_columns:
+                return {
+                    'success': False,
+                    'error': f'数据文件缺少必需的列: {", ".join(missing_columns)}',
+                    'error_code': 'MISSING_COLUMNS'
+                }
+            
+            # 数据验证：确保数据不为空
+            if len(df) == 0:
+                return {
+                    'success': False,
+                    'error': '数据为空，无法计算指标',
+                    'error_code': 'EMPTY_DATA'
+                }
+            
+            # 数据验证：确保价格数据有效
+            price_columns = ['open', 'high', 'low', 'close']
+            for col in price_columns:
+                if df[col].isna().all():
+                    return {
+                        'success': False,
+                        'error': f'列 {col} 的数据全部为NaN，无法计算指标',
+                        'error_code': 'INVALID_PRICE_DATA'
+                    }
+            
             # 创建指标计算器
             indicator = StockIndicator(n=5)
             
             # 计算所有指标
-            result_df = indicator.calculate_all(df.copy(), buy_threshold=buy_threshold)
+            try:
+                result_df = indicator.calculate_all(df.copy(), buy_threshold=buy_threshold)
+            except ValueError as e:
+                # 处理指标计算中的值错误
+                logger.error(f'指标计算时发生值错误: {str(e)}', exc_info=True)
+                return {
+                    'success': False,
+                    'error': f'指标计算失败: {str(e)}',
+                    'error_code': 'INDICATOR_CALCULATION_ERROR'
+                }
             
             # 统计信号
             buy_signals_count = int(result_df['买'].sum())

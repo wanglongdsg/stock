@@ -143,6 +143,7 @@ class StockIndicator:
         
         Args:
             df: 包含趋势线和价格数据的DataFrame
+            buy_threshold: 买入信号阈值，趋势线从下向上穿越此值进行买入（默认10.0）
             
         Returns:
             添加了信号列的DataFrame
@@ -151,15 +152,19 @@ class StockIndicator:
         close = df['close']
         midline = df['中线']
         
+        # 数据验证：确保趋势线数据有效
+        if trend_line.isna().all():
+            raise ValueError('趋势线数据全部为NaN，无法计算买入信号')
+        
         # 超卖区判断 (趋势线 < 10)
         df['超卖区'] = (trend_line < 10).astype(int)
         
         # 超买区判断 (趋势线 > 90)
         df['超买区'] = (trend_line > 90).astype(int)
         
-        # 买入信号: 趋势线必须先回落到10（或以下），然后从下向上穿越10
-        # 严格逻辑：在从下向上穿越10之前，趋势线必须曾经在10以下
-        # 如果趋势线前面一天/周/月没有回落到10以下，即使拐点向上也不进行购买
+        # 买入信号: 趋势线必须先回落到buy_threshold（或以下），然后从下向上穿越buy_threshold
+        # 严格逻辑：在从下向上穿越buy_threshold之前，趋势线必须曾经在buy_threshold以下
+        # 如果趋势线前面一天/周/月没有回落到buy_threshold以下，即使拐点向上也不进行购买
         
         # 初始化买入信号和买入原因
         buy_signals = pd.Series(0, index=df.index, dtype=int)
@@ -168,9 +173,16 @@ class StockIndicator:
         # 记录最近一次趋势线高于buy_threshold的位置
         last_above_threshold_idx = -1
         
+        # 优化：预先检查是否有任何数据低于阈值，避免不必要的循环
+        has_any_below_threshold = (trend_line <= buy_threshold).any()
+        
         for i in range(1, len(trend_line)):
             prev_trend = trend_line.iloc[i - 1]
             curr_trend = trend_line.iloc[i]
+            
+            # 跳过NaN值
+            if pd.isna(prev_trend) or pd.isna(curr_trend):
+                continue
             
             # 检查是否从下向上穿越buy_threshold（当前>buy_threshold，前一日<=buy_threshold）
             if curr_trend > buy_threshold and prev_trend <= buy_threshold:
@@ -180,16 +192,24 @@ class StockIndicator:
                 if last_above_threshold_idx >= 0:
                     # 检查从last_above_threshold_idx+1到i-1之间，是否有趋势线<=buy_threshold的情况
                     # 这确保了在最近一次高于buy_threshold之后，确实有回落到buy_threshold以下
-                    for j in range(last_above_threshold_idx + 1, i):
-                        if trend_line.iloc[j] <= buy_threshold:
-                            has_below_threshold = True
-                            break
+                    check_start = last_above_threshold_idx + 1
+                    check_end = i
+                    
+                    # 确保检查范围有效
+                    if check_start < check_end:
+                        for j in range(check_start, check_end):
+                            trend_val = trend_line.iloc[j]
+                            if pd.notna(trend_val) and trend_val <= buy_threshold:
+                                has_below_threshold = True
+                                break
                 else:
                     # 如果之前没有高于buy_threshold的记录，检查从开始到i-1之间是否有<=buy_threshold的情况
                     # 但需要确保不是第一次就穿越（即之前确实有数据）
-                    if i > 0:
+                    if i > 0 and has_any_below_threshold:
+                        # 优化：如果整个序列都没有低于阈值的数据，直接跳过
                         for j in range(i):
-                            if trend_line.iloc[j] <= buy_threshold:
+                            trend_val = trend_line.iloc[j]
+                            if pd.notna(trend_val) and trend_val <= buy_threshold:
                                 has_below_threshold = True
                                 break
                 
@@ -201,7 +221,7 @@ class StockIndicator:
                 else:
                     # 没有回落到buy_threshold以下，不买入（即使拐点向上）
                     last_above_threshold_idx = i
-            elif curr_trend > buy_threshold:
+            elif pd.notna(curr_trend) and curr_trend > buy_threshold:
                 # 趋势线在buy_threshold以上，更新最近一次高于buy_threshold的位置
                 last_above_threshold_idx = i
         
