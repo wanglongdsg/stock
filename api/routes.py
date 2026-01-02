@@ -304,6 +304,11 @@ def backtest():
         else:
             buy_threshold = 10.0  # 默认值
         
+        # 获取策略关系（AND/OR，默认OR）
+        strategy_relation = data.get('strategy_relation', 'OR').upper()
+        if strategy_relation not in ['AND', 'OR']:
+            strategy_relation = 'OR'
+        
         # 获取股票代码
         stock_code = data.get('stock_code', '159915').strip()
         if not stock_code:
@@ -322,7 +327,7 @@ def backtest():
         result = BacktestService.calculate_backtest(
             period, initial_amount, file_path, start_date, end_date, 
             stop_loss_percent, take_profit_percent, buy_threshold, 
-            below_ma20_days, sell_strategies, trailing_stop_percent
+            below_ma20_days, sell_strategies, trailing_stop_percent, strategy_relation
         )
         
         # 如果计算失败，返回错误

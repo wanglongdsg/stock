@@ -252,11 +252,23 @@ body {
     box-shadow: var(--shadow-lg);
 }
 
+.panel-header {
+    margin-bottom: 24px;
+    padding-bottom: 16px;
+    border-bottom: 2px solid var(--border-color);
+}
+
 .panel-title {
-    font-size: 1.3rem;
+    font-size: 1.5rem;
     font-weight: 600;
-    margin-bottom: 20px;
     color: var(--text-primary);
+    margin-bottom: 8px;
+}
+
+.panel-subtitle {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    margin: 0;
 }
 
 .form-group {
@@ -375,6 +387,137 @@ body {
 
 [data-theme="dark"] .strategy-checkbox:hover {
     background: rgba(255, 255, 255, 0.05);
+}
+
+/* 策略关系选择样式 */
+.strategy-relation-group {
+    margin-top: 16px;
+    padding: 16px;
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius);
+    border-left: 4px solid var(--primary-color);
+}
+
+.strategy-relation-label {
+    display: block;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 12px;
+    font-size: 14px;
+}
+
+.strategy-relation-options {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+
+.strategy-relation-option {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 12px 16px;
+    border: 2px solid var(--border-color);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: var(--transition);
+    background: var(--bg-color);
+}
+
+.strategy-relation-option:hover {
+    border-color: var(--primary-color);
+    background: rgba(37, 99, 235, 0.05);
+}
+
+.strategy-relation-option input[type="radio"] {
+    margin-bottom: 8px;
+    cursor: pointer;
+    accent-color: var(--primary-color);
+    width: 18px;
+    height: 18px;
+}
+
+.strategy-relation-option input[type="radio"]:checked ~ span {
+    color: var(--primary-color);
+    font-weight: 600;
+}
+
+.strategy-relation-option span {
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+}
+
+.strategy-relation-option small {
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.4;
+}
+
+.strategy-relation-option input[type="radio"]:checked ~ small {
+    color: var(--text-secondary);
+}
+
+[data-theme="dark"] .strategy-relation-group {
+    background: var(--card-bg);
+    border-color: var(--border-color);
+}
+
+[data-theme="dark"] .strategy-relation-option {
+    background: rgba(255, 255, 255, 0.03);
+    border-color: var(--border-color);
+}
+
+[data-theme="dark"] .strategy-relation-option:hover {
+    background: rgba(96, 165, 250, 0.1);
+    border-color: var(--primary-color);
+}
+
+/* 策略参数配置区域 */
+.strategy-params-section {
+    margin-top: 24px;
+    padding-top: 24px;
+    border-top: 2px solid var(--border-color);
+}
+
+.section-subtitle {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.section-subtitle::before {
+    content: '';
+    width: 4px;
+    height: 20px;
+    background: var(--primary-color);
+    border-radius: 2px;
+}
+
+.label-icon {
+    margin-right: 6px;
+    font-size: 1.1em;
+}
+
+/* 响应式优化 */
+@media (max-width: 768px) {
+    .strategy-relation-options {
+        grid-template-columns: 1fr;
+    }
+    
+    .strategy-checkboxes {
+        min-height: auto;
+    }
+    
+    .panel-card {
+        padding: 20px;
+    }
 }
 
 .button-group {

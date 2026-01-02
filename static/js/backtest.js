@@ -14,6 +14,7 @@ const elements = {
     btnBacktest: document.getElementById('btnBacktest'),
     initialAmount: document.getElementById('initialAmount'),
     sellStrategies: document.getElementById('sellStrategies'),
+    strategyRelation: document.querySelector('input[name="strategyRelation"]:checked'),
     stopLossPercent: document.getElementById('stopLossPercent'),
     takeProfitPercent: document.getElementById('takeProfitPercent'),
     belowMa20Days: document.getElementById('belowMa20Days'),
@@ -205,11 +206,16 @@ async function handleBacktest() {
     showLoading();
 
     try {
+        // 获取策略关系
+        const strategyRelationRadio = document.querySelector('input[name="strategyRelation"]:checked');
+        const strategyRelation = strategyRelationRadio ? strategyRelationRadio.value : 'OR';
+        
         const requestBody = {
             period,
             stock_code: stockCode,
             initial_amount: initialAmount,
-            sell_strategies: selectedStrategies
+            sell_strategies: selectedStrategies,
+            strategy_relation: strategyRelation
         };
         
         if (selectedStrategies.includes('stop_loss') && stopLossPercent !== null) {

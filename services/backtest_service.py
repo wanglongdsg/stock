@@ -44,7 +44,7 @@ class BacktestService:
     def calculate_backtest(cls, period: str, initial_amount: float, file_path: str = 'data/159915.xlsx',
                           start_date: str = None, end_date: str = None, stop_loss_percent: float = None,
                           take_profit_percent: float = None, buy_threshold: float = 10.0, below_ma20_days: int = None,
-                          sell_strategies: list = None, trailing_stop_percent: float = None):
+                          sell_strategies: list = None, trailing_stop_percent: float = None, strategy_relation: str = 'OR'):
         """
         计算回测结果
         
@@ -291,13 +291,30 @@ class BacktestService:
                         'period': period
                     }
                     
-                    # 遍历所有策略，检查是否应该卖出
-                    for strategy in strategy_instances:
-                        sell, reason = strategy.should_sell(strategy_context)
-                        if sell:
+                    # 根据策略关系（AND/OR）判断是否卖出
+                    if strategy_relation.upper() == 'AND':
+                        # AND关系：所有策略都必须触发才卖出
+                        triggered_strategies = []
+                        all_triggered = True
+                        
+                        for strategy in strategy_instances:
+                            sell, reason = strategy.should_sell(strategy_context)
+                            if sell:
+                                triggered_strategies.append(reason)
+                            else:
+                                all_triggered = False
+                        
+                        if all_triggered and len(triggered_strategies) > 0:
                             should_sell = True
-                            sell_reason = reason
-                            break  # 任一策略触发卖出即执行
+                            sell_reason = ' & '.join(triggered_strategies)  # 组合所有触发的原因
+                    else:
+                        # OR关系（默认）：任一策略触发即卖出
+                        for strategy in strategy_instances:
+                            sell, reason = strategy.should_sell(strategy_context)
+                            if sell:
+                                should_sell = True
+                                sell_reason = reason
+                                break  # 任一策略触发卖出即执行
                     
                     # 执行卖出
                     if should_sell:
