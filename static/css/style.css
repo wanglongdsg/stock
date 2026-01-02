@@ -105,6 +105,47 @@ body {
     flex-wrap: wrap;
 }
 
+/* 主导航菜单 */
+.main-nav {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-right: 10px;
+}
+
+.nav-link {
+    display: inline-flex;
+    align-items: center;
+    padding: 8px 16px;
+    background: var(--card-bg);
+    border: 2px solid var(--border-color);
+    border-radius: 8px;
+    color: var(--text-primary);
+    text-decoration: none;
+    font-size: 0.9rem;
+    font-weight: 500;
+    transition: var(--transition);
+}
+
+.nav-link:hover {
+    border-color: var(--primary-color);
+    background: var(--bg-color);
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+}
+
+.nav-link.active {
+    background: linear-gradient(135deg, var(--primary-color), #3b82f6);
+    color: white;
+    border-color: var(--primary-color);
+}
+
+.nav-link.active:hover {
+    background: linear-gradient(135deg, var(--primary-color), #3b82f6);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.4);
+}
+
 .username {
     font-size: 0.95rem;
     color: var(--text-secondary);
@@ -187,6 +228,7 @@ body {
     font-size: 1.1rem;
     color: var(--text-secondary);
     font-weight: 400;
+    margin-top: 10px;
 }
 
 /* 控制面板 */
@@ -645,6 +687,25 @@ body {
         margin-top: 15px;
         justify-content: center;
         flex-wrap: wrap;
+        gap: 10px;
+    }
+    
+    .main-nav {
+        order: -1;
+        width: 100%;
+        justify-content: center;
+        margin-right: 0;
+        margin-bottom: 10px;
+    }
+    
+    .nav-link {
+        flex: 1;
+        justify-content: center;
+        min-width: 120px;
+    }
+    
+    .theme-switcher {
+        order: -1;
     }
 
     .btn-logout {

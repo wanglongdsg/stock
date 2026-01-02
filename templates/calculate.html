@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>计算指标 - 股票技术指标分析系统</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script>
+        window.STOCK_COLORS = {
+            rise: '{{ color_rise }}',
+            fall: '{{ color_fall }}'
+        };
+    </script>
+</head>
+<body>
+    <div class="container">
+        <!-- 头部 -->
+        <header class="header">
+            <div class="header-content">
+                <h1 class="title">
+                    <span class="icon">📈</span>
+                    股票技术指标分析系统
+                </h1>
+                <p class="subtitle">计算指标</p>
+            </div>
+            <div class="header-actions">
+                <nav class="main-nav">
+                    <a href="{{ url_for('calculate') }}" class="nav-link active">计算指标</a>
+                    <a href="{{ url_for('backtest') }}" class="nav-link">回测分析</a>
+                </nav>
+                <button class="theme-switcher" id="themeSwitcher" title="切换主题">
+                    <span class="theme-switcher-icon">🌙</span>
+                    <span class="theme-switcher-text">深色</span>
+                </button>
+                <span class="username">👤 {{ username }}</span>
+                <a href="{{ url_for('logout') }}" class="btn-logout" title="退出登录">
+                    <span class="logout-icon">🚪</span>
+                    退出
+                </a>
+            </div>
+        </header>
+
+        <!-- 控制面板 -->
+        <section class="control-panel">
+            <div class="panel-card">
+                <h2 class="panel-title">参数设置</h2>
+                <div class="form-group">
+                    <label for="stockCode">股票代码</label>
+                    <input type="text" id="stockCode" class="form-control" placeholder="例如: 159915" value="159915">
+                    <small class="form-hint">数据文件位于data目录，文件名格式：股票代码.xlsx</small>
+                </div>
+                <div class="form-group">
+                    <label for="period">周期类型</label>
+                    <select id="period" class="form-control">
+                        <option value="D">日线</option>
+                        <option value="W">周线</option>
+                        <option value="M">月线</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="buyThreshold">买入信号阈值</label>
+                    <input type="number" id="buyThreshold" class="form-control" value="" placeholder="默认10" min="0" max="100" step="0.1">
+                    <small class="form-hint">趋势线从下向上穿越此值进行买入，留空则默认为10</small>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="startDate">开始日期</label>
+                        <input type="date" id="startDate" class="form-control">
+                        <small class="form-hint">可选，留空则从最早数据开始</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="endDate">结束日期</label>
+                        <input type="date" id="endDate" class="form-control">
+                        <small class="form-hint">可选，留空则到最新数据</small>
+                    </div>
+                </div>
+                <div class="button-group">
+                    <button id="btnCalculate" class="btn btn-primary">
+                        <span class="btn-icon">🔍</span>
+                        计算指标
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- 加载提示 -->
+        <div id="loading" class="loading" style="display: none;">
+            <div class="spinner"></div>
+            <p>正在计算中...</p>
+        </div>
+
+        <!-- 统计卡片 -->
+        <section id="statisticsSection" class="statistics-section" style="display: none;">
+            <div class="stats-grid">
+                <div class="stat-card stat-primary">
+                    <div class="stat-icon">📊</div>
+                    <div class="stat-content">
+                        <div class="stat-label">总记录数</div>
+                        <div class="stat-value" id="totalRecords">-</div>
+                    </div>
+                </div>
+                <div class="stat-card stat-success">
+                    <div class="stat-icon">🔼</div>
+                    <div class="stat-content">
+                        <div class="stat-label">买入信号</div>
+                        <div class="stat-value" id="buySignals">-</div>
+                    </div>
+                </div>
+                <div class="stat-card stat-danger">
+                    <div class="stat-icon">🔽</div>
+                    <div class="stat-content">
+                        <div class="stat-label">卖出信号</div>
+                        <div class="stat-value" id="sellSignals">-</div>
+                    </div>
+                </div>
+                <div class="stat-card stat-warning">
+                    <div class="stat-icon">⚠️</div>
+                    <div class="stat-content">
+                        <div class="stat-label">超卖区</div>
+                        <div class="stat-value" id="oversold">-</div>
+                    </div>
+                </div>
+                <div class="stat-card stat-info">
+                    <div class="stat-icon">📈</div>
+                    <div class="stat-content">
+                        <div class="stat-label">超买区</div>
+                        <div class="stat-value" id="overbought">-</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 图表区域 -->
+        <section id="chartSection" class="chart-section" style="display: none;">
+            <div class="section-header">
+                <h2 class="section-title">趋势线图表</h2>
+            </div>
+            <div class="chart-container">
+                <canvas id="trendChart"></canvas>
+            </div>
+        </section>
+
+        <!-- 数据表格 -->
+        <section id="dataSection" class="data-section" style="display: none;">
+            <div class="tabs">
+                <button class="tab-btn active" data-tab="buySignals">买入信号</button>
+                <button class="tab-btn" data-tab="sellSignals">卖出信号</button>
+                <button class="tab-btn" data-tab="recent">最近数据</button>
+            </div>
+
+            <!-- 买入信号表格 -->
+            <div id="buySignalsTab" class="tab-content active">
+                <div class="table-container">
+                    <table class="data-table" id="buySignalsTable">
+                        <thead>
+                            <tr>
+                                <th>日期</th>
+                                <th>收盘价</th>
+                                <th>趋势线</th>
+                                <th>20均线</th>
+                                <th>买入原因</th>
+                            </tr>
+                        </thead>
+                        <tbody id="buySignalsBody">
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- 卖出信号表格 -->
+            <div id="sellSignalsTab" class="tab-content">
+                <div class="table-container">
+                    <table class="data-table" id="sellSignalsTable">
+                        <thead>
+                            <tr>
+                                <th>日期</th>
+                                <th>收盘价</th>
+                                <th>趋势线</th>
+                                <th>20均线</th>
+                                <th>卖出原因</th>
+                            </tr>
+                        </thead>
+                        <tbody id="sellSignalsBody">
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- 最近数据表格 -->
+            <div id="recentTab" class="tab-content">
+                <div class="table-container">
+                    <table class="data-table" id="recentDataTable">
+                        <thead>
+                            <tr>
+                                <th>日期</th>
+                                <th>收盘价</th>
+                                <th>支撑</th>
+                                <th>阻力</th>
+                                <th>中线</th>
+                                <th>趋势线</th>
+                                <th>20日均线</th>
+                                <th>买入</th>
+                                <th>卖出</th>
+                            </tr>
+                        </thead>
+                        <tbody id="recentDataBody">
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/calculate.js') }}"></script>
+</body>
+</html>
+
+

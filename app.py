@@ -98,13 +98,30 @@ def logout():
     return redirect(url_for('login'))
 
 
-# 首页路由
+# 首页路由（重定向到计算指标页面）
 @app.route('/index')
 @app.route('/')
 @login_required
 def index():
-    """首页"""
-    return render_template('index.html', 
+    """首页 - 重定向到计算指标页面"""
+    return redirect(url_for('calculate'))
+
+# 计算指标页面路由
+@app.route('/calculate')
+@login_required
+def calculate():
+    """计算指标页面"""
+    return render_template('calculate.html', 
+                     username=session.get('username', '用户'),
+                     color_rise=COLOR_RISE,
+                     color_fall=COLOR_FALL)
+
+# 回测分析页面路由
+@app.route('/backtest')
+@login_required
+def backtest():
+    """回测分析页面"""
+    return render_template('backtest.html', 
                      username=session.get('username', '用户'),
                      color_rise=COLOR_RISE,
                      color_fall=COLOR_FALL)
